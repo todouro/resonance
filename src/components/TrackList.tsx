@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { EllipsisVertical } from 'lucide-react'
+import { EllipsisVertical, ExternalLink } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
 import {
@@ -342,6 +342,20 @@ export function TrackList({
               <div className="track-meta">
                 <div className="track-title-row">
                   <strong>{cleanDisplayTitle(track.title)}</strong>
+                  {track.unavailable && <span className="spotify-track-missing">Spotify · local file needed</span>}
+                  {track.source === 'spotify' && track.externalUrl && (
+                    <a
+                      className="spotify-track-link"
+                      href={track.externalUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open track on Spotify"
+                      aria-label={`Open ${cleanDisplayTitle(track.title)} on Spotify`}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <ExternalLink size={12} />
+                    </a>
+                  )}
                   {currentTrackId === track.id && isPlaying && (
                     <div className="track-equalizer" title="Playing" aria-label="Now playing">
                       <span className="eq-bar eq-1" />
