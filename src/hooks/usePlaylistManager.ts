@@ -106,10 +106,15 @@ export function usePlaylistManager() {
   const activePlaylist = playlists.find((playlist) => playlist.id === activePlaylistId)
 
   useEffect(() => {
+    const playableIds = new Set(
+      tracks
+        .filter((track) => !track.unavailable && Boolean(track.filePath || track.audioUrl))
+        .map((track) => track.id),
+    )
     const playlistTrackIds =
       activePlaylistId === libraryId
-        ? tracks.map((track) => track.id)
-        : activePlaylist?.trackIds ?? []
+        ? tracks.filter((track) => playableIds.has(track.id)).map((track) => track.id)
+        : (activePlaylist?.trackIds ?? []).filter((trackId) => playableIds.has(trackId))
 
     syncPlaylistQueue(queueRef.current, syncStateRef.current, {
       activePlaylistId,
