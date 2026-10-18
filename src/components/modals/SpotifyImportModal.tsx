@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ExternalLink, LoaderCircle, Music2, X } from 'lucide-react'
 import { disconnectSpotify, fetchSpotifyLibrary, getSavedSpotifyClientId, hasSpotifySession, saveSpotifyClientId, connectSpotify } from '../../services/spotify'
+import type { SpotifyTrackSummary } from '../../services/spotify'
 import { useMusicStore } from '../../store/useMusicStore'
 import type { Track } from '../../types'
 
@@ -29,11 +30,11 @@ function normalize(value: string): string {
 }
 
 function matchLocalTracks(
-  spotifyTracks: Array<{ name: string; artists: string[] }>,
+  spotifyTracks: SpotifyTrackSummary[],
   localTracks: Track[],
   declaredTotal: number,
-): { ids: string[]; matched: number; missing: number } {
-  const playable = localTracks.filter((track) => Boolean(track.filePath || track.audioUrl))
+): { ids: string[]; matched: number; missing: number; placeholders: Track[] } {
+  const playable = localTracks.filter((track) => !track.unavailable && Boolean(track.filePath || track.audioUrl))
   const byTitle = new Map<string, Track[]>()
   for (const track of playable) {
     const key = normalize(track.title)
@@ -44,6 +45,7 @@ function matchLocalTracks(
   }
 
   const ids: string[] = []
+  const placeholders: Track[] = []
   let matched = 0
   for (const spotifyTrack of spotifyTracks) {
     const candidates = byTitle.get(normalize(spotifyTrack.name)) ?? []
@@ -55,10 +57,34 @@ function matchLocalTracks(
     if (localTrack) {
       matched += 1
       ids.push(localTrack.id)
+      continue
     }
+
+    const fallbackIdentity = normalize(`${spotifyTrack.name} ${spotifyTrack.artists.join(' ')}`)
+    const id = `spotify-track:${spotifyTrack.id || encodeURIComponent(fallbackIdentity)}`
+    ids.push(id)
+    placeholders.push({
+      id,
+      title: spotifyTrack.name,
+      artist: spotifyTrack.artists.join(', ') || 'Unknown artist',
+      album: spotifyTrack.album || 'Spotify',
+      duration: spotifyTrack.duration ?? 0,
+      fileName: spotifyTrack.name,
+      coverUrl: spotifyTrack.coverUrl,
+      accent: '#1ed760',
+      source: 'spotify',
+      externalUrl: spotifyTrack.externalUrl,
+      unavailable: true,
+    })
   }
   const uniqueIds = Array.from(new Set(ids))
-  return { ids: uniqueIds, matched, missing: Math.max(0, declaredTotal - matched) }
+  const uniquePlaceholders = Array.from(new Map(placeholders.map((track) => [track.id, track])).values())
+  return {
+    ids: uniqueIds,
+    matched,
+    missing: Math.max(0, declaredTotal - matched),
+    placeholders: uniquePlaceholders,
+  }
 }
 
 function SpotifyMark() {
@@ -98,19 +124,24 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
       const library = await fetchSpotifyLibrary()
       const localTracks = useMusicStore.getState().tracks
       const liked = matchLocalTracks(library.likedTracks, localTracks, library.likedTotal)
+      const spotifyMetadataTracks = new Map<string, Track>()
+      for (const track of liked.placeholders) spotifyMetadataTracks.set(track.id, track)
       const importedPlaylists = library.playlists.map((playlist) => {
         const matched = matchLocalTracks(playlist.tracks, localTracks, playlist.totalTracks)
+        for (const track of matched.placeholders) spotifyMetadataTracks.set(track.id, track)
         return {
           id: playlist.id,
           name: playlist.name,
           externalUrl: playlist.externalUrl,
           totalTracks: playlist.totalTracks,
+          matchedTracks: matched.matched,
           unmatchedTracks: matched.missing,
           trackIds: matched.ids,
         }
       })
       useMusicStore.getState().syncSpotifyPlaylists(
         importedPlaylists,
+        Array.from(spotifyMetadataTracks.values()),
         liked.ids,
         library.likedTotal,
         liked.missing,
@@ -121,7 +152,7 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
         likedMissing: liked.missing,
         playlistCount: library.playlists.length,
         playlistTracksTotal: library.playlists.reduce((sum, playlist) => sum + playlist.totalTracks, 0),
-        playlistTracksMatched: importedPlaylists.reduce((sum, playlist) => sum + playlist.trackIds.length, 0),
+        playlistTracksMatched: importedPlaylists.reduce((sum, playlist) => sum + playlist.matchedTracks, 0),
         playlistTracksMissing: importedPlaylists.reduce((sum, playlist) => sum + playlist.unmatchedTracks, 0),
         skippedPlaylists: library.skippedPlaylists,
       })
