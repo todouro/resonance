@@ -417,7 +417,7 @@ fn parse_spotify_public_link(raw: &str) -> Result<(String, String, String), Stri
         }
         (kind.to_string(), id.to_string())
     } else {
-        let no_query = raw.split(['?', '#']).next().unwrap_or("");
+        let no_query = raw.split(|character| character == '?' || character == '#').next().unwrap_or("");
         let path = no_query
             .strip_prefix("https://open.spotify.com/")
             .or_else(|| no_query.strip_prefix("https://www.open.spotify.com/"))
@@ -582,9 +582,12 @@ fn public_spotify_track(id: &str) -> SpotifyPublicTrack {
     let pieces: Vec<&str> = description.split('·').map(str::trim).filter(|part| !part.is_empty()).collect();
 
     let mut artist = String::new();
-    if let Some((maybe_title, maybe_artist)) = title.split_once(" - ") {
-        title = maybe_title.trim().to_string();
-        artist = maybe_artist.trim().to_string();
+    let title_parts = title
+        .split_once(" - ")
+        .map(|(maybe_title, maybe_artist)| (maybe_title.trim().to_string(), maybe_artist.trim().to_string()));
+    if let Some((maybe_title, maybe_artist)) = title_parts {
+        title = maybe_title;
+        artist = maybe_artist;
     }
     if artist.is_empty() && !pieces.is_empty() {
         artist = pieces[0].to_string();
@@ -595,9 +598,12 @@ fn public_spotify_track(id: &str) -> SpotifyPublicTrack {
     // entry rather than losing the whole public playlist because one track page changed.
     if title.is_empty() {
         title = spotify_embed_title(&external_url).unwrap_or_else(|| format!("Spotify track {id}"));
-        if let Some((maybe_title, maybe_artist)) = title.split_once(" - ") {
-            title = maybe_title.trim().to_string();
-            if artist.is_empty() { artist = maybe_artist.trim().to_string(); }
+        let title_parts = title
+            .split_once(" - ")
+            .map(|(maybe_title, maybe_artist)| (maybe_title.trim().to_string(), maybe_artist.trim().to_string()));
+        if let Some((maybe_title, maybe_artist)) = title_parts {
+            title = maybe_title;
+            if artist.is_empty() { artist = maybe_artist; }
         }
     }
 
