@@ -3844,3 +3844,7 @@ h3 {
 .spotify-track-missing { margin-left: 8px; padding: 2px 6px; border-radius: 5px; background: rgba(30,215,96,.09); color: #1ed760; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .spotify-track-link { display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; color: #1ed760; opacity: .8; }
 .spotify-track-link:hover { opacity: 1; }
+
+.spotify-dashboard-link { display: inline-flex; align-items: center; gap: 3px; border: 0; padding: 0; background: transparent; color: #8ba8ff; text-decoration: underline; font: inherit; cursor: pointer; }
+.spotify-dashboard-link:hover { color: #b6c7ff; }
+.spotify-copy-feedback { margin: -8px 0 0; color: #1ed760; font-size: 12px; line-height: 1.5; }
