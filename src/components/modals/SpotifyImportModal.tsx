@@ -18,7 +18,6 @@ type ImportSummary = {
 }
 
 const REDIRECT_URI = 'http://127.0.0.1:43821/callback'
-const DASHBOARD_URL = 'https://developer.spotify.com/dashboard'
 
 function normalize(value: string): string {
   return value.normalize('NFKD')
