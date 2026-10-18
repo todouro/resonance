@@ -22,8 +22,12 @@ type TokenPayload = {
 type OAuthCallback = { code?: string | null; state?: string | null; error?: string | null }
 
 export type SpotifyTrackSummary = {
+  id?: string
   name: string
   artists: string[]
+  album?: string
+  duration?: number
+  coverUrl?: string
   externalUrl?: string
 }
 
@@ -259,9 +263,12 @@ function asTrackSummary(value: unknown): SpotifyTrackSummary | null {
   if (!value || typeof value !== 'object') return null
   const wrapper = value as { item?: unknown; track?: unknown }
   const raw = (wrapper.item ?? wrapper.track ?? value) as {
+    id?: unknown
     name?: unknown
     type?: unknown
     artists?: unknown
+    album?: { name?: unknown; images?: unknown }
+    duration_ms?: unknown
     external_urls?: { spotify?: unknown }
   } | null
   if (!raw || typeof raw !== 'object' || typeof raw.name !== 'string') return null
@@ -274,9 +281,18 @@ function asTrackSummary(value: unknown): SpotifyTrackSummary | null {
         return []
       })
     : []
+  const album = raw.album && typeof raw.album === 'object' ? raw.album : undefined
+  const images = Array.isArray(album?.images) ? album.images : []
+  const coverUrl = images.find((image) =>
+    image && typeof image === 'object' && typeof (image as { url?: unknown }).url === 'string',
+  ) as { url: string } | undefined
   return {
+    id: typeof raw.id === 'string' ? raw.id : undefined,
     name: raw.name,
     artists,
+    album: typeof album?.name === 'string' ? album.name : undefined,
+    duration: typeof raw.duration_ms === 'number' ? raw.duration_ms / 1000 : undefined,
+    coverUrl: coverUrl?.url,
     externalUrl: typeof raw.external_urls?.spotify === 'string' ? raw.external_urls.spotify : undefined,
   }
 }
