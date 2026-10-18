@@ -1,23 +1,18 @@
 import { useEffect, useState } from 'react'
-import { ExternalLink, LoaderCircle, Music2, X } from 'lucide-react'
-import { disconnectSpotify, fetchSpotifyLibrary, getSavedSpotifyClientId, hasSpotifySession, saveSpotifyClientId, connectSpotify, copySpotifyRedirectUri, openSpotifyDashboard } from '../../services/spotify'
-import type { SpotifyTrackSummary } from '../../services/spotify'
+import { LoaderCircle, Music2, X } from 'lucide-react'
+import { fetchPublicSpotifyLink } from '../../services/spotify'
+import type { SpotifyPublicLinkResult, SpotifyTrackSummary } from '../../services/spotify'
 import { useMusicStore } from '../../store/useMusicStore'
 import type { Track } from '../../types'
 
 type SpotifyImportModalProps = { onClose: () => void }
 type ImportSummary = {
-  likedTotal: number
-  likedMatched: number
-  likedMissing: number
-  playlistCount: number
-  playlistTracksTotal: number
-  playlistTracksMatched: number
-  playlistTracksMissing: number
-  skippedPlaylists: number
+  name: string
+  kind: string
+  trackCount: number
+  matched: number
+  missing: number
 }
-
-const REDIRECT_URI = 'http://127.0.0.1:43821/callback'
 
 function normalize(value: string): string {
   return value.normalize('NFKD')
@@ -31,7 +26,6 @@ function normalize(value: string): string {
 function matchLocalTracks(
   spotifyTracks: SpotifyTrackSummary[],
   localTracks: Track[],
-  declaredTotal: number,
 ): { ids: string[]; matched: number; missing: number; placeholders: Track[] } {
   const playable = localTracks.filter((track) => !track.unavailable && Boolean(track.filePath || track.audioUrl))
   const byTitle = new Map<string, Track[]>()
@@ -72,17 +66,16 @@ function matchLocalTracks(
       coverUrl: spotifyTrack.coverUrl,
       accent: '#1ed760',
       source: 'spotify',
-      externalUrl: spotifyTrack.externalUrl,
+      externalUrl: spotifyTrack.externalUrl || `https://open.spotify.com/track/${spotifyTrack.id}`,
       unavailable: true,
     })
   }
-  const uniqueIds = Array.from(new Set(ids))
-  const uniquePlaceholders = Array.from(new Map(placeholders.map((track) => [track.id, track])).values())
+
   return {
-    ids: uniqueIds,
+    ids: Array.from(new Set(ids)),
     matched,
-    missing: Math.max(0, declaredTotal - matched),
-    placeholders: uniquePlaceholders,
+    missing: Math.max(0, spotifyTracks.length - matched),
+    placeholders: Array.from(new Map(placeholders.map((track) => [track.id, track])).values()),
   }
 }
 
@@ -96,122 +89,73 @@ function SpotifyMark() {
 }
 
 export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
-  const [clientId, setClientId] = useState(getSavedSpotifyClientId())
-  const [connected, setConnected] = useState(hasSpotifySession())
+  const [spotifyUrl, setSpotifyUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [preview, setPreview] = useState<SpotifyPublicLinkResult | null>(null)
   const [summary, setSummary] = useState<ImportSummary | null>(null)
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onClose() }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) onClose()
+    }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [busy, onClose])
 
-  const handleSync = async (connectFirst = false) => {
-    setBusy(true)
+  const handleFetch = async () => {
     setError(null)
-    if (!clientId.trim()) {
-      setBusy(false)
-      setError('Enter your Spotify Client ID first.')
+    setPreview(null)
+    setSummary(null)
+    if (!spotifyUrl.trim()) {
+      setError('Paste a public Spotify playlist, album, or track link first.')
       return
     }
+
+    setBusy(true)
     try {
-      saveSpotifyClientId(clientId.trim())
-      if (connectFirst) await connectSpotify(clientId.trim())
-      setConnected(hasSpotifySession())
-      const library = await fetchSpotifyLibrary()
-      const localTracks = useMusicStore.getState().tracks
-      const liked = matchLocalTracks(library.likedTracks, localTracks, library.likedTotal)
-      const spotifyMetadataTracks = new Map<string, Track>()
-      for (const track of liked.placeholders) spotifyMetadataTracks.set(track.id, track)
-      const importedPlaylists = library.playlists.map((playlist) => {
-        const matched = matchLocalTracks(playlist.tracks, localTracks, playlist.totalTracks)
-        for (const track of matched.placeholders) spotifyMetadataTracks.set(track.id, track)
-        return {
-          id: playlist.id,
-          name: playlist.name,
-          externalUrl: playlist.externalUrl,
-          totalTracks: playlist.totalTracks,
-          matchedTracks: matched.matched,
-          unmatchedTracks: matched.missing,
-          trackIds: matched.ids,
-        }
-      })
-      useMusicStore.getState().syncSpotifyPlaylists(
-        importedPlaylists,
-        Array.from(spotifyMetadataTracks.values()),
-        liked.ids,
-        library.likedTotal,
-        liked.missing,
-      )
-      setSummary({
-        likedTotal: library.likedTotal,
-        likedMatched: liked.matched,
-        likedMissing: liked.missing,
-        playlistCount: library.playlists.length,
-        playlistTracksTotal: library.playlists.reduce((sum, playlist) => sum + playlist.totalTracks, 0),
-        playlistTracksMatched: importedPlaylists.reduce((sum, playlist) => sum + playlist.matchedTracks, 0),
-        playlistTracksMissing: importedPlaylists.reduce((sum, playlist) => sum + playlist.unmatchedTracks, 0),
-        skippedPlaylists: library.skippedPlaylists,
-      })
-      setConnected(true)
+      const result = await fetchPublicSpotifyLink(spotifyUrl)
+      if (!result.tracks.length) {
+        throw new Error('Spotify did not expose any tracks for this link. Try another public link.')
+      }
+      setPreview(result)
     } catch (cause) {
-      setConnected(hasSpotifySession())
-      setError(cause instanceof Error ? cause.message : 'Spotify import failed. Please try again.')
+      setError(cause instanceof Error ? cause.message : 'Could not fetch this public Spotify link.')
     } finally {
       setBusy(false)
     }
   }
 
-  const handleOpenDashboard = async () => {
+  const handleImport = () => {
+    if (!preview || busy) return
     setError(null)
+    setBusy(true)
     try {
-      await openSpotifyDashboard()
-    } catch {
-      setError('Could not open your browser automatically. Open https://developer.spotify.com/dashboard in your browser.')
-    }
-  }
+      const localTracks = useMusicStore.getState().tracks
+      const matched = matchLocalTracks(preview.tracks, localTracks)
+      const playlistId = `spotify-public:${preview.kind}:${preview.id}`
 
-  const handleCopyRedirectUri = async () => {
-    setError(null)
-    setCopyFeedback(null)
-    try {
-      await copySpotifyRedirectUri()
-      setCopyFeedback('Copied! Paste this URI into your Spotify app settings.')
-      return
-    } catch {
-      // Native clipboard access may be unavailable on some desktop environments. Fall back
-      // to the WebView clipboard API and then the selection-based clipboard method.
-    }
+      useMusicStore.getState().importSpotifyPublicPlaylist({
+        id: playlistId,
+        name: preview.name,
+        externalUrl: preview.externalUrl,
+        totalTracks: preview.totalTracks,
+        unmatchedTracks: matched.missing,
+        trackIds: matched.ids,
+      }, matched.placeholders)
 
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(REDIRECT_URI)
-      } else {
-        const textarea = document.createElement('textarea')
-        textarea.value = REDIRECT_URI
-        textarea.setAttribute('readonly', '')
-        textarea.style.position = 'fixed'
-        textarea.style.opacity = '0'
-        document.body.appendChild(textarea)
-        textarea.select()
-        const copied = document.execCommand('copy')
-        textarea.remove()
-        if (!copied) throw new Error('Clipboard access was denied.')
-      }
-      setCopyFeedback('Copied! Paste this URI into your Spotify app settings.')
-    } catch {
-      setError('Copy did not work. Select the redirect URI above and copy it manually.')
+      setSummary({
+        name: preview.name,
+        kind: preview.kind,
+        trackCount: preview.tracks.length,
+        matched: matched.matched,
+        missing: matched.missing,
+      })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not import this Spotify link into Resonance.')
+    } finally {
+      setBusy(false)
     }
-  }
-
-  const handleDisconnect = () => {
-    disconnectSpotify()
-    setConnected(false)
-    setSummary(null)
-    setError(null)
   }
 
   return (
@@ -222,7 +166,7 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
             <SpotifyMark />
             <div>
               <h3 id="spotify-import-title">Import from Spotify</h3>
-              <p className="spotify-modal-subtitle">Bring your saved songs and playlists into Resonance.</p>
+              <p className="spotify-modal-subtitle">Import a public playlist, album, or track without app setup.</p>
             </div>
           </div>
           <button type="button" className="modal-close-btn" aria-label="Close Spotify import" title="Close" onClick={onClose} disabled={busy}>
@@ -231,60 +175,69 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
         </header>
 
         <div className="spotify-import-body">
-          {connected ? (
-            <div className="spotify-status-line"><Music2 size={17} /> Spotify account connected</div>
-          ) : (
-            <>
-              <p className="spotify-import-note">
-                <strong>First, identify your Resonance app to Spotify.</strong> Spotify requires a Client ID for sign-in. This is not your Spotify password or Client Secret; it lets Spotify know which app is requesting access.
-              </p>
-              <label className="spotify-client-id-label">
-                Spotify Client ID
-                <input
-                  className="spotify-client-id-input"
-                  value={clientId}
-                  onChange={(event) => setClientId(event.target.value)}
-                  placeholder="Paste your Spotify app Client ID"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </label>
-              <p className="spotify-import-note">
-                1. Create an app in the <button type="button" className="spotify-dashboard-link" onClick={() => void handleOpenDashboard()}>Spotify Developer Dashboard <ExternalLink size={11} /></button> and copy its <strong>Client ID</strong> here.
-                <br />
-                2. Add this exact redirect URI to the app settings. Then click <strong>Sign in with Spotify</strong>; your browser will open for Spotify login and consent.
-              </p>
-              <div className="spotify-redirect-row"><code>{REDIRECT_URI}</code><button type="button" className="spotify-secondary-button" onClick={() => void handleCopyRedirectUri()}>Copy URI</button></div>
-              {copyFeedback && <p className="spotify-copy-feedback" role="status">{copyFeedback}</p>}
-            </>
-          )}
+          <p className="spotify-import-note">
+            No Spotify Developer Dashboard, Client ID, or Premium subscription is needed for public links. Resonance reads metadata Spotify exposes publicly; it cannot access private playlists or your personal Liked Songs through this method.
+          </p>
+
+          <label className="spotify-client-id-label">
+            Spotify playlist, album, or track link
+            <input
+              className="spotify-client-id-input"
+              value={spotifyUrl}
+              onChange={(event) => {
+                setSpotifyUrl(event.target.value)
+                setPreview(null)
+                setSummary(null)
+              }}
+              placeholder="https://open.spotify.com/playlist/..."
+              autoComplete="off"
+              spellCheck={false}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !busy) void handleFetch()
+              }}
+            />
+          </label>
+
+          <div className="spotify-import-actions">
+            <button type="button" className="spotify-connect-button" disabled={busy || !spotifyUrl.trim()} onClick={() => void handleFetch()}>
+              {busy ? <><LoaderCircle size={16} className="spinning" /> Fetching Spotify tracks…</> : <><Music2 size={17} /> Fetch tracks</>}
+            </button>
+            {preview && (
+              <button type="button" className="spotify-secondary-button" disabled={busy} onClick={handleImport}>
+                Add to Resonance
+              </button>
+            )}
+          </div>
 
           {error && <div className="spotify-error" role="alert">{error}</div>}
 
-          {summary && (
-            <>
-              <p className="spotify-import-note"><strong>Sync complete.</strong> Playlist names and accessible Spotify track metadata were imported. Songs with local matches play in Resonance; other songs stay visible as Spotify-only entries until you add local audio.</p>
-              <div className="spotify-sync-summary">
-                <div className="spotify-sync-stat"><strong>{summary.likedMatched}/{summary.likedTotal}</strong><span>Liked Songs matched locally</span></div>
-                <div className="spotify-sync-stat"><strong>{summary.playlistCount}</strong><span>Playlists imported</span></div>
-                <div className="spotify-sync-stat"><strong>{summary.playlistTracksMatched}</strong><span>Playlist tracks matched</span></div>
-                <div className="spotify-sync-stat"><strong>{summary.likedMissing + summary.playlistTracksMissing}</strong><span>Tracks not found locally</span></div>
+          {preview && (
+            <section className="spotify-public-preview" aria-live="polite">
+              <div className="spotify-status-line"><Music2 size={16} /> Public {preview.kind} found</div>
+              <strong className="spotify-preview-title">{preview.name}</strong>
+              <p className="spotify-import-note">{preview.tracks.length} track(s) exposed by Spotify are ready to import. The list may be partial if Spotify's public page doesn't expose every track.</p>
+              <div className="spotify-preview-track-list">
+                {preview.tracks.slice(0, 8).map((track) => (
+                  <div className="spotify-preview-track" key={track.id}>
+                    <span>{track.name}</span>
+                    <small>{track.artists.join(', ') || 'Artist details unavailable'}</small>
+                  </div>
+                ))}
+                {preview.tracks.length > 8 && <p className="spotify-import-note">Plus {preview.tracks.length - 8} more track(s).</p>}
               </div>
-              {summary.skippedPlaylists > 0 && <p className="spotify-import-note">{summary.skippedPlaylists} playlist(s) could not be read by Spotify. Spotify currently limits playlist contents for playlists you do not own or collaborate on.</p>}
-              {summary.likedMissing + summary.playlistTracksMissing > 0 && <p className="spotify-import-note">Add the missing songs’ audio files to your Music folder, then use <strong>Rescan music folder</strong> and sync again.</p>}
-            </>
+            </section>
           )}
 
-          <div className="spotify-import-actions">
-            <button type="button" className="spotify-connect-button" disabled={busy} onClick={() => void handleSync(!connected)}>
-              {busy ? <><LoaderCircle size={16} className="spinning" /> {connected ? 'Syncing library…' : 'Opening Spotify…'}</> : <><Music2 size={17} /> {connected ? 'Sync Spotify library' : 'Sign in with Spotify'}</>}
-            </button>
-            {connected && <button type="button" className="spotify-secondary-button" disabled={busy} onClick={handleDisconnect}>Disconnect</button>}
-          </div>
+          {summary && (
+            <div className="spotify-import-success" role="status">
+              <strong>Added “{summary.name}” to Resonance.</strong>
+              <p>{summary.trackCount} tracks imported from the public {summary.kind} link; {summary.matched} matched local audio files and {summary.missing} need local audio.</p>
+            </div>
+          )}
         </div>
 
         <footer className="spotify-attribution">
-          Playlist metadata is provided by <a href="https://open.spotify.com" target="_blank" rel="noreferrer">Spotify</a>. Imported playlists include a link back to Spotify. Spotify audio is not downloaded or streamed by Resonance.
+          Public Spotify metadata only. Spotify audio is not downloaded or streamed by Resonance. For tracks to play locally, add audio files to your Music folder and rescan.
         </footer>
       </div>
     </div>
