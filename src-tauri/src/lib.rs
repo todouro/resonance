@@ -5,9 +5,8 @@ use serde::Serialize;
 use serde_json::Value;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{Emitter, Manager};
@@ -384,255 +383,314 @@ async fn inspect_media_url(app: tauri::AppHandle, url: String) -> Result<String,
 }
 
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SpotifyPublicTrack {
+    id: String,
+    name: String,
+    artists: Vec<String>,
+    album: String,
+    duration: u64,
+    cover_url: Option<String>,
+    external_url: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SpotifyOAuthCallback {
-    code: Option<String>,
-    state: Option<String>,
-    error: Option<String>,
+struct SpotifyPublicLink {
+    id: String,
+    name: String,
+    kind: String,
+    external_url: String,
+    total_tracks: usize,
+    tracks: Vec<SpotifyPublicTrack>,
 }
 
-fn open_spotify_url(url: &str) -> Result<(), String> {
-    let allowed = url.starts_with("https://accounts.spotify.com/authorize?")
-        || url == "https://developer.spotify.com/dashboard"
-        || url == "https://open.spotify.com";
-    if !allowed {
-        return Err("Rejected an unapproved external URL.".into());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("rundll32.exe")
-            .args(["url.dll,FileProtocolHandler", url])
-            .spawn()
-            .map_err(|error| format!("Could not open your browser: {error}"))?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg(url)
-            .spawn()
-            .map_err(|error| format!("Could not open your browser: {error}"))?;
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        Command::new("xdg-open")
-            .arg(url)
-            .spawn()
-            .map_err(|error| format!("Could not open your browser: {error}"))?;
-    }
-    Ok(())
-}
-fn decode_query_component(value: &str) -> String {
-    let bytes = value.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'+' => {
-                decoded.push(b' ');
-                index += 1;
-            }
-            b'%' if index + 2 < bytes.len() => {
-                let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or("");
-                if let Ok(byte) = u8::from_str_radix(hex, 16) {
-                    decoded.push(byte);
-                    index += 3;
-                } else {
-                    decoded.push(bytes[index]);
-                    index += 1;
-                }
-            }
-            byte => {
-                decoded.push(byte);
-                index += 1;
+fn parse_spotify_public_link(raw: &str) -> Result<(String, String, String), String> {
+    let raw = raw.trim();
+    let (kind, id) = if let Some(uri) = raw.strip_prefix("spotify:") {
+        let mut parts = uri.split(':');
+        let kind = parts.next().unwrap_or("");
+        let id = parts.next().unwrap_or("");
+        if parts.next().is_some() {
+            return Err("Paste a Spotify playlist, album, or track link.".into());
+        }
+        (kind.to_string(), id.to_string())
+    } else {
+        let no_query = raw.split(['?', '#']).next().unwrap_or("");
+        let path = no_query
+            .strip_prefix("https://open.spotify.com/")
+            .or_else(|| no_query.strip_prefix("https://www.open.spotify.com/"))
+            .ok_or_else(|| "Use a public https://open.spotify.com link (not a private or shortened share link).".to_string())?;
+        let segments: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+        let mut found: Option<(String, String)> = None;
+        for index in 0..segments.len() {
+            let segment = segments[index];
+            if matches!(segment, "playlist" | "album" | "track") && index + 1 < segments.len() {
+                found = Some((segment.to_string(), segments[index + 1].to_string()));
+                break;
             }
         }
+        found.ok_or_else(|| "This Spotify link is not a playlist, album, or track link.".to_string())?
+    };
+
+    if !matches!(kind.as_str(), "playlist" | "album" | "track")
+        || id.len() < 18
+        || id.len() > 24
+        || !id.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    {
+        return Err("The Spotify link ID looks invalid. Copy the link again from Spotify and retry.".into());
     }
-    String::from_utf8_lossy(&decoded).into_owned()
+
+    let canonical = format!("https://open.spotify.com/{kind}/{id}");
+    Ok((kind, id, canonical))
 }
 
-fn send_spotify_callback_page(stream: &mut std::net::TcpStream, status: &str, message: &str) {
-    let body = format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><title>Resonance Spotify sign-in</title></head><body style=\"font:16px system-ui;max-width:40rem;margin:4rem auto;padding:0 1.5rem;background:#101311;color:#f4f7f4\"><h1>Resonance</h1><p>{}</p><p>You can return to the Resonance app.</p></body></html>",
-        message
-    );
-    let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\n\r\n{}",
-        body.len(),
-        body
-    );
-    let _ = stream.write_all(response.as_bytes());
-}
-
-fn wait_for_spotify_callback(expected_state: String, authorization_url: String) -> Result<SpotifyOAuthCallback, String> {
-    use std::io::{BufRead, BufReader, Write};
-    use std::net::{TcpListener, TcpStream};
-    use std::thread;
-    use std::time::Instant;
-
-    let listener = TcpListener::bind(("127.0.0.1", 43821))
-        .map_err(|error| format!("Could not open the Spotify sign-in port (43821). Close any other sign-in attempt and try again: {error}"))?;
-    listener.set_nonblocking(true)
-        .map_err(|error| format!("Could not prepare the Spotify sign-in receiver: {error}"))?;
-    open_spotify_url(&authorization_url)?;
-
-    let deadline = Instant::now() + Duration::from_secs(300);
-    loop {
-        match listener.accept() {
-            Ok((mut stream, _peer)) => {
-                let mut reader = BufReader::new(&mut stream);
-                let mut request_line = String::new();
-                if reader.read_line(&mut request_line).is_err() || request_line.is_empty() {
-                    continue;
-                }
-                loop {
-                    let mut header = String::new();
-                    if reader.read_line(&mut header).is_err() || header == "\r\n" || header == "\n" || header.is_empty() {
-                        break;
-                    }
-                }
-                drop(reader);
-
-                let mut parts = request_line.split_whitespace();
-                let method = parts.next().unwrap_or("");
-                let target = parts.next().unwrap_or("");
-                if method != "GET" {
-                    send_spotify_callback_page(&mut stream, "405 Method Not Allowed", "This Spotify callback request was not accepted.");
-                    continue;
-                }
-                let (path, query) = target.split_once('?').unwrap_or((target, ""));
-                if path != "/callback" {
-                    send_spotify_callback_page(&mut stream, "404 Not Found", "This local address is only used to finish Spotify sign-in.");
-                    continue;
-                }
-
-                let params: std::collections::HashMap<String, String> = query
-                    .split('&')
-                    .filter_map(|pair| {
-                        let (key, value) = pair.split_once('=')?;
-                        Some((decode_query_component(key), decode_query_component(value)))
-                    })
-                    .collect();
-                let returned_state = params.get("state").cloned();
-                if returned_state.as_deref() != Some(expected_state.as_str()) {
-                    send_spotify_callback_page(&mut stream, "400 Bad Request", "Spotify sign-in could not be verified. Return to Resonance and try again.");
-                    continue;
-                }
-
-                let result = SpotifyOAuthCallback {
-                    code: params.get("code").cloned(),
-                    state: returned_state,
-                    error: params.get("error").cloned(),
-                };
-                if result.error.is_some() {
-                    send_spotify_callback_page(&mut stream, "200 OK", "Spotify access was not granted.");
-                    return Ok(result);
-                }
-                if result.code.is_none() {
-                    send_spotify_callback_page(&mut stream, "400 Bad Request", "Spotify did not return an authorization code.");
-                    return Err("Spotify did not return an authorization code. Please try again.".into());
-                }
-                send_spotify_callback_page(&mut stream, "200 OK", "Spotify connected successfully.");
-                return Ok(result);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                if Instant::now() >= deadline {
-                    return Err("Spotify sign-in timed out. Reopen Spotify Import and try again.".into());
-                }
-                thread::sleep(Duration::from_millis(200));
-            }
-            Err(error) => return Err(format!("Could not receive the Spotify sign-in response: {error}")),
-        }
-    }
-}
-
-#[tauri::command]
-async fn spotify_authorize(authorization_url: String, expected_state: String) -> Result<SpotifyOAuthCallback, String> {
-    tauri::async_runtime::spawn_blocking(move || wait_for_spotify_callback(expected_state, authorization_url))
-        .await
-        .map_err(|error| format!("The Spotify sign-in receiver stopped unexpectedly: {error}"))?
-}
-
-/// Opens the official Spotify Developer Dashboard in the user's default browser.
-#[tauri::command]
-async fn open_spotify_dashboard() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(|| open_spotify_url("https://developer.spotify.com/dashboard"))
-        .await
-        .map_err(|error| format!("The browser-opening task stopped unexpectedly: {error}"))?
-}
-
-/// Copies the fixed Spotify redirect URI using the native system clipboard.
-fn copy_redirect_uri_to_clipboard() -> Result<(), String> {
-    const REDIRECT_URI: &str = "http://127.0.0.1:43821/callback";
-
+fn spotify_curl(url: &str) -> Result<String, String> {
+    let program = if cfg!(target_os = "windows") { "curl.exe" } else { "curl" };
+    let mut command = Command::new(program);
+    command
+        .args([
+            "--location",
+            "--max-redirs", "3",
+            "--connect-timeout", "8",
+            "--max-time", "20",
+            "--max-filesize", "12582912",
+            "--silent",
+            "--show-error",
+            "--fail",
+            "--compressed",
+            "--proto", "=https",
+            "--proto-redir", "=https",
+            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+            "--url", url,
+        ]);
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
-        let output = Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "Set-Clipboard -Value 'http://127.0.0.1:43821/callback'",
-            ])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .map_err(|error| format!("Could not access the Windows clipboard: {error}"))?;
-        if output.status.success() {
-            return Ok(());
-        }
-        return Err("Windows could not copy the redirect URI to the clipboard.".into());
+        command.creation_flags(CREATE_NO_WINDOW);
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        let mut child = Command::new("pbcopy")
-            .stdin(Stdio::piped())
-            .spawn()
-            .map_err(|error| format!("Could not access the macOS clipboard: {error}"))?;
-        let mut input = child.stdin.take().ok_or_else(|| "Could not write to the clipboard.".to_string())?;
-        input.write_all(REDIRECT_URI.as_bytes()).map_err(|error| format!("Could not write to the clipboard: {error}"))?;
-        drop(input);
-        let status = child.wait().map_err(|error| format!("Could not finish copying the redirect URI: {error}"))?;
-        if status.success() { return Ok(()); }
-        return Err("macOS could not copy the redirect URI to the clipboard.".into());
+    let output = command.output().map_err(|error| {
+        format!("Resonance couldn't start curl to read the public Spotify page: {error}")
+    })?;
+    if !output.status.success() {
+        return Err("Spotify did not return this public page. Check the link and your internet connection.".into());
     }
+    if output.stdout.len() > 12 * 1024 * 1024 {
+        return Err("Spotify's page was larger than the import safety limit.".into());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
 
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let attempts: [(&str, &[&str]); 3] = [
-            ("wl-copy", &[]),
-            ("xclip", &["-selection", "clipboard"]),
-            ("xsel", &["--clipboard", "--input"]),
-        ];
-        for (program, args) in attempts {
-            let spawned = Command::new(program)
-                .args(args)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn();
-            let Ok(mut child) = spawned else { continue };
-            let Some(mut input) = child.stdin.take() else { continue };
-            if input.write_all(REDIRECT_URI.as_bytes()).is_err() {
-                let _ = child.kill();
-                continue;
-            }
-            drop(input);
-            if child.wait().map(|status| status.success()).unwrap_or(false) {
-                return Ok(());
+fn html_attribute(tag: &str, attribute: &str) -> Option<String> {
+    for quote in ['"', '\''] {
+        let needle = format!("{attribute}={quote}");
+        if let Some(start) = tag.find(&needle) {
+            let value_start = start + needle.len();
+            if let Some(relative_end) = tag[value_start..].find(quote) {
+                return Some(decode_spotify_html(&tag[value_start..value_start + relative_end]));
             }
         }
-        return Err("No supported clipboard utility was available.".into());
+    }
+    None
+}
+
+fn extract_spotify_meta(html: &str, key: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let mut offset = 0;
+    while let Some(relative_start) = lower[offset..].find("<meta") {
+        let start = offset + relative_start;
+        let Some(relative_end) = lower[start..].find('>') else { break };
+        let end = start + relative_end + 1;
+        let tag = &html[start..end];
+        let tag_lower = tag.to_ascii_lowercase();
+        let is_match = tag_lower.contains(&format!("property=\"{key}\""))
+            || tag_lower.contains(&format!("property='{key}'"))
+            || tag_lower.contains(&format!("name=\"{key}\""))
+            || tag_lower.contains(&format!("name='{key}'"));
+        if is_match {
+            if let Some(value) = html_attribute(tag, "content") {
+                return Some(value);
+            }
+        }
+        offset = end;
+    }
+    None
+}
+
+fn decode_spotify_html(raw: &str) -> String {
+    raw.replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#x27;", "'")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+}
+
+fn clean_spotify_title(raw: &str) -> String {
+    let mut value = raw.trim();
+    for suffix in [" | Spotify", " - Spotify", " • Spotify"] {
+        if let Some(stripped) = value.strip_suffix(suffix) {
+            value = stripped.trim();
+            break;
+        }
+    }
+    value.to_string()
+}
+
+fn extract_track_ids(html: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    for marker in ["spotify:track:", "open.spotify.com/track/", "/track/"] {
+        let mut offset = 0;
+        while let Some(relative_start) = html[offset..].find(marker) {
+            let start = offset + relative_start + marker.len();
+            let tail = &html[start..];
+            let id: String = tail.chars().take_while(|character| character.is_ascii_alphanumeric()).collect();
+            if (18..=24).contains(&id.len()) && !ids.iter().any(|existing| existing == &id) {
+                ids.push(id);
+                if ids.len() >= 250 {
+                    return ids;
+                }
+            }
+            offset = start + tail.chars().take_while(|character| character.is_ascii_alphanumeric()).count().max(1);
+            if offset >= html.len() {
+                break;
+            }
+        }
+    }
+    ids
+}
+
+fn spotify_embed_title(url: &str) -> Option<String> {
+    let encoded = url.replace(":", "%3A").replace("/", "%2F");
+    let body = spotify_curl(&format!("https://open.spotify.com/oembed?url={encoded}")).ok()?;
+    let data: Value = serde_json::from_str(&body).ok()?;
+    data.get("title").and_then(Value::as_str).map(clean_spotify_title).filter(|value| !value.is_empty())
+}
+
+fn public_spotify_track(id: &str) -> SpotifyPublicTrack {
+    let external_url = format!("https://open.spotify.com/track/{id}");
+    let html = spotify_curl(&external_url).unwrap_or_default();
+    let mut title = extract_spotify_meta(&html, "og:title").unwrap_or_default();
+    if title.is_empty() {
+        title = clean_spotify_title(&extract_spotify_meta(&html, "twitter:title").unwrap_or_default());
+    }
+    let description = extract_spotify_meta(&html, "og:description").unwrap_or_default();
+    let image = extract_spotify_meta(&html, "og:image");
+    let pieces: Vec<&str> = description.split('·').map(str::trim).filter(|part| !part.is_empty()).collect();
+
+    let mut artist = String::new();
+    if let Some((maybe_title, maybe_artist)) = title.split_once(" - ") {
+        title = maybe_title.trim().to_string();
+        artist = maybe_artist.trim().to_string();
+    }
+    if artist.is_empty() && !pieces.is_empty() {
+        artist = pieces[0].to_string();
+    }
+    let album = pieces.get(1).copied().unwrap_or("").to_string();
+
+    // Spotify's public pages occasionally withhold full metadata. Keep an identifiable
+    // entry rather than losing the whole public playlist because one track page changed.
+    if title.is_empty() {
+        title = spotify_embed_title(&external_url).unwrap_or_else(|| format!("Spotify track {id}"));
+        if let Some((maybe_title, maybe_artist)) = title.split_once(" - ") {
+            title = maybe_title.trim().to_string();
+            if artist.is_empty() { artist = maybe_artist.trim().to_string(); }
+        }
+    }
+
+    SpotifyPublicTrack {
+        id: id.to_string(),
+        name: title,
+        artists: if artist.is_empty() { Vec::new() } else { vec![artist] },
+        album,
+        duration: 0,
+        cover_url: image,
+        external_url,
     }
 }
 
+fn fetch_public_spotify_link_impl(raw_url: String) -> Result<SpotifyPublicLink, String> {
+    let (kind, id, canonical_url) = parse_spotify_public_link(&raw_url)?;
+    let page_html = spotify_curl(&canonical_url)
+        .or_else(|_| spotify_curl(&format!("https://open.spotify.com/embed/{kind}/{id}")))?;
+
+    let page_name = extract_spotify_meta(&page_html, "og:title")
+        .map(|title| clean_spotify_title(&title))
+        .filter(|title| !title.is_empty());
+    let name = spotify_embed_title(&canonical_url)
+        .or(page_name)
+        .unwrap_or_else(|| match kind.as_str() {
+            "playlist" => "Spotify playlist".to_string(),
+            "album" => "Spotify album".to_string(),
+            _ => "Spotify track".to_string(),
+        });
+
+    let ids = if kind == "track" {
+        vec![id.clone()]
+    } else {
+        let mut ids = extract_track_ids(&page_html);
+        if ids.is_empty() {
+            for url in [
+                format!("https://open.spotify.com/embed/{kind}/{id}"),
+                format!("{canonical_url}?nd=1"),
+            ] {
+                if let Ok(html) = spotify_curl(&url) {
+                    ids = extract_track_ids(&html);
+                    if !ids.is_empty() { break; }
+                }
+            }
+        }
+        ids
+    };
+
+    if ids.is_empty() {
+        return Err("Spotify didn't expose tracks for this link. Make sure the playlist or album is public on Spotify and try again. Some public pages don't expose their full track list.".into());
+    }
+
+    let ids: Vec<String> = ids.into_iter().take(250).collect();
+    let next_index = std::sync::atomic::AtomicUsize::new(0);
+    let results: Mutex<Vec<Option<SpotifyPublicTrack>>> = Mutex::new(vec![None; ids.len()]);
+    std::thread::scope(|scope| {
+        for _ in 0..ids.len().min(8) {
+            scope.spawn(|| loop {
+                let index = next_index.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if index >= ids.len() { break; }
+                let track = public_spotify_track(&ids[index]);
+                if let Ok(mut guard) = results.lock() {
+                    guard[index] = Some(track);
+                }
+            });
+        }
+    });
+
+    let tracks: Vec<SpotifyPublicTrack> = results
+        .into_inner()
+        .unwrap_or_default()
+        .into_iter()
+        .flatten()
+        .collect();
+    if tracks.is_empty() {
+        return Err("Spotify returned no readable track metadata for this link. Try the public link again.".into());
+    }
+
+    Ok(SpotifyPublicLink {
+        id,
+        name,
+        kind,
+        external_url: canonical_url,
+        total_tracks: tracks.len(),
+        tracks,
+    })
+}
+
 #[tauri::command]
-async fn copy_spotify_redirect_uri() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(copy_redirect_uri_to_clipboard)
+async fn fetch_spotify_public_link(url: String) -> Result<SpotifyPublicLink, String> {
+    tauri::async_runtime::spawn_blocking(move || fetch_public_spotify_link_impl(url))
         .await
-        .map_err(|error| format!("The clipboard task stopped unexpectedly: {error}"))?
+        .map_err(|error| format!("The Spotify import task stopped unexpectedly: {error}"))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -641,7 +699,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_persisted_scope::init())
-        .invoke_handler(tauri::generate_handler![download_audio, inspect_media_url, cancel_download, spotify_authorize, open_spotify_dashboard, copy_spotify_redirect_uri])
+        .invoke_handler(tauri::generate_handler![download_audio, inspect_media_url, cancel_download, fetch_spotify_public_link])
         .run(tauri::generate_context!())
         .expect("error while running Resonance native music player");
 }
