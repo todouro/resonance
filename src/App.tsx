@@ -87,6 +87,9 @@ function App() {
   // 2. Search and track filtering
   const { query, setQuery, visibleTracks, totalDuration, trackCount } =
     useTrackFilter(tracks, activePlaylistId, activePlaylist)
+  const playableVisibleTracks = visibleTracks.filter(
+    (track) => !track.unavailable && Boolean(track.filePath || track.audioUrl),
+  )
 
   // 3. Audio playback lifecycle & synchronization
   const {
@@ -167,7 +170,7 @@ function App() {
   // 5. Global keyboard shortcuts
   const previousVolumeRef = useRef<number>(0.82)
   useKeyboardShortcuts({
-    onTogglePlay: () => togglePlay(visibleTracks[0]?.id, visibleTracks.map((t) => t.id)),
+    onTogglePlay: () => togglePlay(playableVisibleTracks[0]?.id, playableVisibleTracks.map((t) => t.id)),
     onPrevious: playPrevious,
     onNext: playNext,
     onSeekBackward: () => {
@@ -314,7 +317,7 @@ function App() {
           currentTrack={currentTrack}
           isPlaying={isPlaying}
           heroTheme={heroTheme}
-          onTogglePlay={() => togglePlay(visibleTracks[0]?.id, visibleTracks.map((t) => t.id))}
+          onTogglePlay={() => togglePlay(playableVisibleTracks[0]?.id, playableVisibleTracks.map((t) => t.id))}
         />
 
         <section className="library-tools">
@@ -350,7 +353,17 @@ function App() {
           activePlaylist={activePlaylist}
           currentTrackId={currentTrack?.id}
           isPlaying={isPlaying}
-          onPlay={(trackId) => handleTrackPlay(trackId, visibleTracks.map((t) => t.id))}
+          onPlay={(trackId) => {
+            const selectedTrack = tracks.find((track) => track.id === trackId)
+            if (selectedTrack?.unavailable) {
+              showToast(
+                `“${selectedTrack.title}” is in Spotify, but its audio file is not in your local library. Add the file to your Music folder to play it.`,
+                { title: 'Local Audio Needed', type: 'info' },
+              )
+              return
+            }
+            handleTrackPlay(trackId, playableVisibleTracks.map((track) => track.id))
+          }}
           onToggleFavorite={handleToggleFavorite}
           onOpenAddToPlaylist={setPlaylistToAddSongs}
           onRemoveFromPlaylist={(playlistId, trackId) => {
@@ -395,7 +408,7 @@ function App() {
         shuffle={shuffle}
         repeat={repeat}
         volume={volume}
-        onTogglePlay={() => togglePlay(visibleTracks[0]?.id, visibleTracks.map((t) => t.id))}
+        onTogglePlay={() => togglePlay(playableVisibleTracks[0]?.id, playableVisibleTracks.map((t) => t.id))}
         onPrevious={playPrevious}
         onNext={playNext}
         onSeek={handleSeek}
