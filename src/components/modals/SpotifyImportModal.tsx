@@ -194,7 +194,7 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
           ) : (
             <>
               <p className="spotify-import-note">
-                Connect with Spotify’s secure authorization flow. Resonance uses a Client ID only—never a Client Secret—and asks only for read access to your saved tracks and playlists.
+                <strong>First, identify your Resonance app to Spotify.</strong> Spotify requires a Client ID for sign-in. This is not your Spotify password or Client Secret; it lets Spotify know which app is requesting access.
               </p>
               <label className="spotify-client-id-label">
                 Spotify Client ID
@@ -208,7 +208,9 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
                 />
               </label>
               <p className="spotify-import-note">
-                Create a Web API app in the <a href={DASHBOARD_URL} target="_blank" rel="noreferrer">Spotify Developer Dashboard <ExternalLink size={11} /></a>, then add this exact redirect URI in its settings:
+                1. Create an app in the <a href={DASHBOARD_URL} target="_blank" rel="noreferrer">Spotify Developer Dashboard <ExternalLink size={11} /></a> and copy its <strong>Client ID</strong> here.
+                <br />
+                2. Add this exact redirect URI to the app settings. Then click <strong>Sign in with Spotify</strong>; your browser will open for Spotify login and consent.
               </p>
               <div className="spotify-redirect-row"><code>{REDIRECT_URI}</code><button type="button" className="spotify-secondary-button" onClick={() => navigator.clipboard?.writeText(REDIRECT_URI).catch(() => undefined)}>Copy URI</button></div>
             </>
@@ -232,7 +234,7 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
 
           <div className="spotify-import-actions">
             <button type="button" className="spotify-connect-button" disabled={busy} onClick={() => void handleSync(!connected)}>
-              {busy ? <><LoaderCircle size={16} className="spinning" /> {connected ? 'Syncing library…' : 'Connecting to Spotify…'}</> : <><Music2 size={17} /> {connected ? 'Sync Spotify library' : 'Connect & import'}</>}
+              {busy ? <><LoaderCircle size={16} className="spinning" /> {connected ? 'Syncing library…' : 'Opening Spotify…'}</> : <><Music2 size={17} /> {connected ? 'Sync Spotify library' : 'Sign in with Spotify'}</>}
             </button>
             {connected && <button type="button" className="spotify-secondary-button" disabled={busy} onClick={handleDisconnect}>Disconnect</button>}
           </div>
