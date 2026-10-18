@@ -3848,3 +3848,12 @@ h3 {
 .spotify-dashboard-link { display: inline-flex; align-items: center; gap: 3px; border: 0; padding: 0; background: transparent; color: #8ba8ff; text-decoration: underline; font: inherit; cursor: pointer; }
 .spotify-dashboard-link:hover { color: #b6c7ff; }
 .spotify-copy-feedback { margin: -8px 0 0; color: #1ed760; font-size: 12px; line-height: 1.5; }
+
+.spotify-public-preview { display: flex; flex-direction: column; gap: 9px; padding: 14px; border: 1px solid var(--border, rgba(255,255,255,.1)); border-radius: 10px; }
+.spotify-preview-title { font-size: 15px; }
+.spotify-preview-track-list { display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto; }
+.spotify-preview-track { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.spotify-preview-track span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.spotify-preview-track small { color: var(--text-secondary, #aaa); font-size: 11px; }
+.spotify-import-success { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid rgba(30,215,96,.28); border-radius: 9px; color: var(--text-primary, #f2f2f2); font-size: 13px; line-height: 1.5; }
+.spotify-import-success p { margin: 0; color: var(--text-secondary, #aaa); }
