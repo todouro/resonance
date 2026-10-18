@@ -13,6 +13,9 @@ export type Track = {
   coverUrl?: string
   coverPath?: string
   coverSource?: 'direct' | 'embedded' | 'custom' | 'pool'
+  source?: 'spotify'
+  externalUrl?: string
+  unavailable?: boolean
   accent: string
 }
 
