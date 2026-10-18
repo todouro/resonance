@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ExternalLink, LoaderCircle, Music2, X } from 'lucide-react'
-import { disconnectSpotify, fetchSpotifyLibrary, getSavedSpotifyClientId, hasSpotifySession, saveSpotifyClientId, connectSpotify } from '../../services/spotify'
+import { disconnectSpotify, fetchSpotifyLibrary, getSavedSpotifyClientId, hasSpotifySession, saveSpotifyClientId, connectSpotify, copySpotifyRedirectUri, openSpotifyDashboard } from '../../services/spotify'
 import type { SpotifyTrackSummary } from '../../services/spotify'
 import { useMusicStore } from '../../store/useMusicStore'
 import type { Track } from '../../types'
@@ -102,6 +102,7 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [summary, setSummary] = useState<ImportSummary | null>(null)
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onClose() }
@@ -165,6 +166,48 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
     }
   }
 
+  const handleOpenDashboard = async () => {
+    setError(null)
+    try {
+      await openSpotifyDashboard()
+    } catch {
+      setError('Could not open your browser automatically. Open https://developer.spotify.com/dashboard in your browser.')
+    }
+  }
+
+  const handleCopyRedirectUri = async () => {
+    setError(null)
+    setCopyFeedback(null)
+    try {
+      await copySpotifyRedirectUri()
+      setCopyFeedback('Copied! Paste this URI into your Spotify app settings.')
+      return
+    } catch {
+      // Native clipboard access may be unavailable on some desktop environments. Fall back
+      // to the WebView clipboard API and then the selection-based clipboard method.
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(REDIRECT_URI)
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = REDIRECT_URI
+        textarea.setAttribute('readonly', '')
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        const copied = document.execCommand('copy')
+        textarea.remove()
+        if (!copied) throw new Error('Clipboard access was denied.')
+      }
+      setCopyFeedback('Copied! Paste this URI into your Spotify app settings.')
+    } catch {
+      setError('Copy did not work. Select the redirect URI above and copy it manually.')
+    }
+  }
+
   const handleDisconnect = () => {
     disconnectSpotify()
     setConnected(false)
@@ -208,11 +251,12 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
                 />
               </label>
               <p className="spotify-import-note">
-                1. Create an app in the <a href={DASHBOARD_URL} target="_blank" rel="noreferrer">Spotify Developer Dashboard <ExternalLink size={11} /></a> and copy its <strong>Client ID</strong> here.
+                1. Create an app in the <button type="button" className="spotify-dashboard-link" onClick={() => void handleOpenDashboard()}>Spotify Developer Dashboard <ExternalLink size={11} /></button> and copy its <strong>Client ID</strong> here.
                 <br />
                 2. Add this exact redirect URI to the app settings. Then click <strong>Sign in with Spotify</strong>; your browser will open for Spotify login and consent.
               </p>
-              <div className="spotify-redirect-row"><code>{REDIRECT_URI}</code><button type="button" className="spotify-secondary-button" onClick={() => navigator.clipboard?.writeText(REDIRECT_URI).catch(() => undefined)}>Copy URI</button></div>
+              <div className="spotify-redirect-row"><code>{REDIRECT_URI}</code><button type="button" className="spotify-secondary-button" onClick={() => void handleCopyRedirectUri()}>Copy URI</button></div>
+              {copyFeedback && <p className="spotify-copy-feedback" role="status">{copyFeedback}</p>}
             </>
           )}
 
