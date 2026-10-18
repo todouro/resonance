@@ -37,6 +37,7 @@ type MusicState = {
   renamePlaylist: (playlistId: string, name: string) => void
   addTrackToPlaylist: (playlistId: string, trackId: string) => void
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => void
+  importSpotifyPublicPlaylist: (incoming: { id: string; name: string; trackIds: string[]; externalUrl: string; totalTracks: number; unmatchedTracks: number }, spotifyTracks: Track[]) => void
   syncSpotifyPlaylists: (incoming: Array<{ id: string; name: string; trackIds: string[]; externalUrl: string; totalTracks: number; matchedTracks: number; unmatchedTracks: number }>, spotifyTracks: Track[], likedTrackIds: string[], likedTotal: number, likedUnmatched: number) => void
   setActivePlaylist: (playlistId: string) => void
   setCurrentTrack: (trackId: string) => void
@@ -85,7 +86,7 @@ function queueSave(state: MusicState) {
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
     saveDesktopLibrary({
-      tracks: state.tracks.filter((t) => Boolean(t.filePath)),
+      tracks: state.tracks.filter((t) => Boolean(t.filePath) || t.source === 'spotify'),
       playlists: state.playlists,
       activePlaylistId: state.activePlaylistId,
       currentTrackId: state.currentTrackId,
@@ -427,6 +428,40 @@ export const useMusicStore = create<MusicState>()(
           )
           queueSave({ ...state, playlists })
           return { playlists }
+        }),
+
+      importSpotifyPublicPlaylist: (incoming, spotifyTracks) =>
+        set((state) => {
+          const localTrackIds = new Set(state.tracks.filter((track) => track.source !== 'spotify').map((track) => track.id))
+          const spotifyTrackMap = new Map<string, Track>(
+            state.tracks
+              .filter((track) => track.source === 'spotify')
+              .map((track) => [track.id, track]),
+          )
+          for (const track of spotifyTracks) {
+            if (!localTrackIds.has(track.id)) spotifyTrackMap.set(track.id, track)
+          }
+
+          const importedPlaylist: Playlist = {
+            id: incoming.id,
+            name: incoming.name,
+            trackIds: Array.from(new Set(incoming.trackIds)),
+            createdAt: state.playlists.find((playlist) => playlist.id === incoming.id)?.createdAt ?? Date.now(),
+            source: 'spotify',
+            externalUrl: incoming.externalUrl,
+            totalTracks: incoming.totalTracks,
+            unmatchedTracks: incoming.unmatchedTracks,
+          }
+          const playlists = ensureFavoritesPlaylist([
+            ...state.playlists.filter((playlist) => playlist.id !== incoming.id),
+            importedPlaylist,
+          ])
+          const tracks = [
+            ...state.tracks.filter((track) => track.source !== 'spotify'),
+            ...spotifyTrackMap.values(),
+          ]
+          queueSave({ ...state, tracks, playlists })
+          return { tracks, playlists }
         }),
 
       syncSpotifyPlaylists: (incoming, spotifyTracks, likedTrackIds, likedTotal, likedUnmatched) =>
