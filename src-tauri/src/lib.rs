@@ -5,13 +5,11 @@ use serde::Serialize;
 use serde_json::Value;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::{Emitter, Manager};
 use tauri_plugin_fs::FsExt;
 use util::{installer_error, last_line, validate_url, Progress, PROGRESS_PREFIX};
@@ -394,9 +392,12 @@ struct SpotifyOAuthCallback {
     error: Option<String>,
 }
 
-fn open_spotify_authorization_url(url: &str) -> Result<(), String> {
-    if !url.starts_with("https://accounts.spotify.com/authorize?") {
-        return Err("Rejected an unexpected Spotify authorization URL.".into());
+fn open_spotify_url(url: &str) -> Result<(), String> {
+    let allowed = url.starts_with("https://accounts.spotify.com/authorize?")
+        || url == "https://developer.spotify.com/dashboard"
+        || url == "https://open.spotify.com";
+    if !allowed {
+        return Err("Rejected an unapproved external URL.".into());
     }
 
     #[cfg(target_os = "windows")]
@@ -404,25 +405,24 @@ fn open_spotify_authorization_url(url: &str) -> Result<(), String> {
         Command::new("rundll32.exe")
             .args(["url.dll,FileProtocolHandler", url])
             .spawn()
-            .map_err(|error| format!("Could not open your browser for Spotify sign-in: {error}"))?;
+            .map_err(|error| format!("Could not open your browser: {error}"))?;
     }
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
             .arg(url)
             .spawn()
-            .map_err(|error| format!("Could not open your browser for Spotify sign-in: {error}"))?;
+            .map_err(|error| format!("Could not open your browser: {error}"))?;
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         Command::new("xdg-open")
             .arg(url)
             .spawn()
-            .map_err(|error| format!("Could not open your browser for Spotify sign-in: {error}"))?;
+            .map_err(|error| format!("Could not open your browser: {error}"))?;
     }
     Ok(())
 }
-
 fn decode_query_component(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
@@ -475,7 +475,7 @@ fn wait_for_spotify_callback(expected_state: String, authorization_url: String) 
         .map_err(|error| format!("Could not open the Spotify sign-in port (43821). Close any other sign-in attempt and try again: {error}"))?;
     listener.set_nonblocking(true)
         .map_err(|error| format!("Could not prepare the Spotify sign-in receiver: {error}"))?;
-    open_spotify_authorization_url(&authorization_url)?;
+    open_spotify_url(&authorization_url)?;
 
     let deadline = Instant::now() + Duration::from_secs(300);
     loop {
@@ -554,13 +554,94 @@ async fn spotify_authorize(authorization_url: String, expected_state: String) ->
         .map_err(|error| format!("The Spotify sign-in receiver stopped unexpectedly: {error}"))?
 }
 
+/// Opens the official Spotify Developer Dashboard in the user's default browser.
+#[tauri::command]
+async fn open_spotify_dashboard() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| open_spotify_url("https://developer.spotify.com/dashboard"))
+        .await
+        .map_err(|error| format!("The browser-opening task stopped unexpectedly: {error}"))?
+}
+
+/// Copies the fixed Spotify redirect URI using the native system clipboard.
+fn copy_redirect_uri_to_clipboard() -> Result<(), String> {
+    const REDIRECT_URI: &str = "http://127.0.0.1:43821/callback";
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let output = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Set-Clipboard -Value 'http://127.0.0.1:43821/callback'",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|error| format!("Could not access the Windows clipboard: {error}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        return Err("Windows could not copy the redirect URI to the clipboard.".into());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut child = Command::new("pbcopy")
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("Could not access the macOS clipboard: {error}"))?;
+        let mut input = child.stdin.take().ok_or_else(|| "Could not write to the clipboard.".to_string())?;
+        input.write_all(REDIRECT_URI.as_bytes()).map_err(|error| format!("Could not write to the clipboard: {error}"))?;
+        drop(input);
+        let status = child.wait().map_err(|error| format!("Could not finish copying the redirect URI: {error}"))?;
+        if status.success() { return Ok(()); }
+        return Err("macOS could not copy the redirect URI to the clipboard.".into());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let attempts: [(&str, &[&str]); 3] = [
+            ("wl-copy", &[]),
+            ("xclip", &["-selection", "clipboard"]),
+            ("xsel", &["--clipboard", "--input"]),
+        ];
+        for (program, args) in attempts {
+            let spawned = Command::new(program)
+                .args(args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+            let Ok(mut child) = spawned else { continue };
+            let Some(mut input) = child.stdin.take() else { continue };
+            if input.write_all(REDIRECT_URI.as_bytes()).is_err() {
+                let _ = child.kill();
+                continue;
+            }
+            drop(input);
+            if child.wait().map(|status| status.success()).unwrap_or(false) {
+                return Ok(());
+            }
+        }
+        return Err("No supported clipboard utility was available.".into());
+    }
+}
+
+#[tauri::command]
+async fn copy_spotify_redirect_uri() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(copy_redirect_uri_to_clipboard)
+        .await
+        .map_err(|error| format!("The clipboard task stopped unexpectedly: {error}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_persisted_scope::init())
-        .invoke_handler(tauri::generate_handler![download_audio, inspect_media_url, cancel_download, spotify_authorize])
+        .invoke_handler(tauri::generate_handler![download_audio, inspect_media_url, cancel_download, spotify_authorize, open_spotify_dashboard, copy_spotify_redirect_uri])
         .run(tauri::generate_context!())
         .expect("error while running Resonance native music player");
 }
