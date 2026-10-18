@@ -50,9 +50,12 @@ type SpotifyPage<T> = {
 }
 
 class SpotifyApiError extends Error {
-  constructor(public readonly status: number, message: string) {
+  readonly status: number
+
+  constructor(status: number, message: string) {
     super(message)
     this.name = 'SpotifyApiError'
+    this.status = status
   }
 }
 
@@ -241,7 +244,7 @@ async function readAllItems<T>(path: string): Promise<{ items: T[]; total: numbe
   let total = 0
   let firstPage = true
   while (next) {
-    const page = await spotifyGet<SpotifyPage<T>>(next)
+    const page: SpotifyPage<T> = await spotifyGet<SpotifyPage<T>>(next)
     if (firstPage) {
       total = typeof page.total === 'number' ? page.total : 0
       firstPage = false
