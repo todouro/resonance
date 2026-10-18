@@ -101,6 +101,14 @@ export function saveSpotifyClientId(clientId: string): void {
   }
 }
 
+export async function openSpotifyDashboard(): Promise<void> {
+  await invoke('open_spotify_dashboard')
+}
+
+export async function copySpotifyRedirectUri(): Promise<void> {
+  await invoke('copy_spotify_redirect_uri')
+}
+
 export function hasSpotifySession(): boolean {
   return Boolean(readStoredSession())
 }
