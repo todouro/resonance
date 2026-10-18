@@ -5,10 +5,13 @@ use serde::Serialize;
 use serde_json::Value;
 use std::ffi::OsStr;
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 use tauri_plugin_fs::FsExt;
 use util::{installer_error, last_line, validate_url, Progress, PROGRESS_PREFIX};
@@ -382,13 +385,182 @@ async fn inspect_media_url(app: tauri::AppHandle, url: String) -> Result<String,
         .map_err(|error| format!("The inspection task stopped unexpectedly: {error}"))?
 }
 
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SpotifyOAuthCallback {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+}
+
+fn open_spotify_authorization_url(url: &str) -> Result<(), String> {
+    if !url.starts_with("https://accounts.spotify.com/authorize?") {
+        return Err("Rejected an unexpected Spotify authorization URL.".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", url])
+            .spawn()
+            .map_err(|error| format!("Could not open your browser for Spotify sign-in: {error}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|error| format!("Could not open your browser for Spotify sign-in: {error}"))?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(|error| format!("Could not open your browser for Spotify sign-in: {error}"))?;
+    }
+    Ok(())
+}
+
+fn decode_query_component(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or("");
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    decoded.push(byte);
+                    index += 3;
+                } else {
+                    decoded.push(bytes[index]);
+                    index += 1;
+                }
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+fn send_spotify_callback_page(stream: &mut std::net::TcpStream, status: &str, message: &str) {
+    let body = format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>Resonance Spotify sign-in</title></head><body style=\"font:16px system-ui;max-width:40rem;margin:4rem auto;padding:0 1.5rem;background:#101311;color:#f4f7f4\"><h1>Resonance</h1><p>{}</p><p>You can return to the Resonance app.</p></body></html>",
+        message
+    );
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    let _ = stream.write_all(response.as_bytes());
+}
+
+fn wait_for_spotify_callback(expected_state: String, authorization_url: String) -> Result<SpotifyOAuthCallback, String> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+    use std::time::Instant;
+
+    let listener = TcpListener::bind(("127.0.0.1", 43821))
+        .map_err(|error| format!("Could not open the Spotify sign-in port (43821). Close any other sign-in attempt and try again: {error}"))?;
+    listener.set_nonblocking(true)
+        .map_err(|error| format!("Could not prepare the Spotify sign-in receiver: {error}"))?;
+    open_spotify_authorization_url(&authorization_url)?;
+
+    let deadline = Instant::now() + Duration::from_secs(300);
+    loop {
+        match listener.accept() {
+            Ok((mut stream, _peer)) => {
+                let mut reader = BufReader::new(&mut stream);
+                let mut request_line = String::new();
+                if reader.read_line(&mut request_line).is_err() || request_line.is_empty() {
+                    continue;
+                }
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).is_err() || header == "\r\n" || header == "\n" || header.is_empty() {
+                        break;
+                    }
+                }
+                drop(reader);
+
+                let mut parts = request_line.split_whitespace();
+                let method = parts.next().unwrap_or("");
+                let target = parts.next().unwrap_or("");
+                if method != "GET" {
+                    send_spotify_callback_page(&mut stream, "405 Method Not Allowed", "This Spotify callback request was not accepted.");
+                    continue;
+                }
+                let (path, query) = target.split_once('?').unwrap_or((target, ""));
+                if path != "/callback" {
+                    send_spotify_callback_page(&mut stream, "404 Not Found", "This local address is only used to finish Spotify sign-in.");
+                    continue;
+                }
+
+                let params: std::collections::HashMap<String, String> = query
+                    .split('&')
+                    .filter_map(|pair| {
+                        let (key, value) = pair.split_once('=')?;
+                        Some((decode_query_component(key), decode_query_component(value)))
+                    })
+                    .collect();
+                let returned_state = params.get("state").cloned();
+                if returned_state.as_deref() != Some(expected_state.as_str()) {
+                    send_spotify_callback_page(&mut stream, "400 Bad Request", "Spotify sign-in could not be verified. Return to Resonance and try again.");
+                    continue;
+                }
+
+                let result = SpotifyOAuthCallback {
+                    code: params.get("code").cloned(),
+                    state: returned_state,
+                    error: params.get("error").cloned(),
+                };
+                if result.error.is_some() {
+                    send_spotify_callback_page(&mut stream, "200 OK", "Spotify access was not granted.");
+                    return Ok(result);
+                }
+                if result.code.is_none() {
+                    send_spotify_callback_page(&mut stream, "400 Bad Request", "Spotify did not return an authorization code.");
+                    return Err("Spotify did not return an authorization code. Please try again.".into());
+                }
+                send_spotify_callback_page(&mut stream, "200 OK", "Spotify connected successfully.");
+                return Ok(result);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err("Spotify sign-in timed out. Reopen Spotify Import and try again.".into());
+                }
+                thread::sleep(Duration::from_millis(200));
+            }
+            Err(error) => return Err(format!("Could not receive the Spotify sign-in response: {error}")),
+        }
+    }
+}
+
+#[tauri::command]
+async fn spotify_authorize(authorization_url: String, expected_state: String) -> Result<SpotifyOAuthCallback, String> {
+    tauri::async_runtime::spawn_blocking(move || wait_for_spotify_callback(expected_state, authorization_url))
+        .await
+        .map_err(|error| format!("The Spotify sign-in receiver stopped unexpectedly: {error}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_persisted_scope::init())
-        .invoke_handler(tauri::generate_handler![download_audio, inspect_media_url, cancel_download])
+        .invoke_handler(tauri::generate_handler![download_audio, inspect_media_url, cancel_download, spotify_authorize])
         .run(tauri::generate_context!())
         .expect("error while running Resonance native music player");
 }

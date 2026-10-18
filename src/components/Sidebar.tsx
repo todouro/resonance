@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import type { ChangeEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Download } from 'lucide-react'
+import { Download, ExternalLink, Music2 } from 'lucide-react'
 import {
   AudioLinesFilled,
   CheckFilled,
@@ -44,6 +44,7 @@ export type SidebarProps = {
   onOpenSettings?: () => void
   isDownloadsActive?: boolean
   onOpenDownloads?: () => void
+  onOpenSpotify?: () => void
 }
 
 export function Sidebar({
@@ -72,6 +73,7 @@ export function Sidebar({
   onOpenSettings,
   isDownloadsActive = false,
   onOpenDownloads,
+  onOpenSpotify,
 }: SidebarProps) {
   const musicInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
@@ -144,10 +146,23 @@ export function Sidebar({
               }
             }}
           >
-            {playlist.id === favoritesId ? <HeartFilled size={18} /> : <PlaylistFilled size={18} />}
+            {playlist.id === favoritesId ? <HeartFilled size={18} /> : playlist.source === 'spotify' ? <Music2 size={18} /> : <PlaylistFilled size={18} />}
             <span className="nav-playlist-name">{playlist.name}</span>
             <em>{playlist.trackIds.length}</em>
             <div className="nav-item-actions">
+              {playlist.source === 'spotify' && playlist.externalUrl && (
+                <a
+                  className="spotify-playlist-link"
+                  href={playlist.externalUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open this playlist on Spotify"
+                  aria-label={`Open ${playlist.name} on Spotify`}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <ExternalLink size={13} />
+                </a>
+              )}
               <PlaylistActionMenu
                 playlist={playlist}
                 onAddToPlaylist={onOpenAddToPlaylist}
@@ -273,6 +288,16 @@ export function Sidebar({
             <RefreshFilled size={14} className={isScanningCovers ? 'spinning' : ''} />
           </button>
         </div>
+
+        <button
+          type="button"
+          className="nav-item spotify-import-nav"
+          title="Connect Spotify and import your playlists"
+          onClick={onOpenSpotify}
+        >
+          <Music2 size={18} />
+          <span>Spotify Import</span>
+        </button>
 
         <button
           type="button"

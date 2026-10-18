@@ -21,6 +21,10 @@ export type Playlist = {
   name: string
   trackIds: string[]
   createdAt: number
+  source?: 'spotify'
+  externalUrl?: string
+  totalTracks?: number
+  unmatchedTracks?: number
 }
 
 export type CoverLookup = Map<string, string>

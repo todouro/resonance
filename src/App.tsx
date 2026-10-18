@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { DownloadSection } from './components/DownloadSection'
+import { SpotifyImportModal } from './components/modals/SpotifyImportModal'
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import { SearchFilled } from './components/icons'
@@ -34,6 +35,7 @@ function App() {
   const [editingTrack, setEditingTrack] = useState<Track | null>(null)
   const [playlistToAddSongs, setPlaylistToAddSongs] = useState<Playlist | null>(null)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isSpotifyImportOpen, setIsSpotifyImportOpen] = useState(false)
   const [activeSection, setActiveSection] = useState<'library' | 'downloads'>('library')
   const [isFirstRunSetupInProgress, setIsFirstRunSetupInProgress] = useState(false)
   const [firstRunSetupStep, setFirstRunSetupStep] = useState<'music' | 'covers'>('music')
@@ -253,6 +255,7 @@ function App() {
         coverFolderName={coverFolderName}
         scanNotice={scanNotice}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSpotify={() => setIsSpotifyImportOpen(true)}
       />
 
       <section className="content">
@@ -470,6 +473,15 @@ function App() {
             playlist={playlistToDelete}
             onClose={() => setPlaylistToDelete(null)}
             onConfirm={handleConfirmDelete}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isSpotifyImportOpen && (
+          <SpotifyImportModal
+            key="spotify-import-modal"
+            onClose={() => setIsSpotifyImportOpen(false)}
           />
         )}
       </AnimatePresence>

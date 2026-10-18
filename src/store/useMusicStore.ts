@@ -37,6 +37,7 @@ type MusicState = {
   renamePlaylist: (playlistId: string, name: string) => void
   addTrackToPlaylist: (playlistId: string, trackId: string) => void
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => void
+  syncSpotifyPlaylists: (incoming: Array<{ id: string; name: string; trackIds: string[]; externalUrl: string; totalTracks: number; unmatchedTracks: number }>, likedTrackIds: string[], likedTotal: number, likedUnmatched: number) => void
   setActivePlaylist: (playlistId: string) => void
   setCurrentTrack: (trackId: string) => void
   setIsPlaying: (isPlaying: boolean) => void
@@ -424,6 +425,50 @@ export const useMusicStore = create<MusicState>()(
               ? { ...playlist, trackIds: playlist.trackIds.filter((id) => id !== trackId) }
               : playlist,
           )
+          queueSave({ ...state, playlists })
+          return { playlists }
+        }),
+
+      syncSpotifyPlaylists: (incoming, likedTrackIds, likedTotal, likedUnmatched) =>
+        set((state) => {
+          const importedById = new Map<string, Playlist>()
+          for (const playlist of state.playlists) {
+            if (playlist.source === 'spotify') importedById.set(playlist.id, playlist)
+          }
+
+          const likedId = 'spotify:liked-songs'
+          const existingLiked = importedById.get(likedId)
+          importedById.set(likedId, {
+            id: likedId,
+            name: 'Spotify Liked Songs',
+            trackIds: Array.from(new Set(likedTrackIds)),
+            createdAt: existingLiked?.createdAt ?? Date.now(),
+            source: 'spotify',
+            externalUrl: 'https://open.spotify.com/collection/tracks',
+            totalTracks: likedTotal,
+            unmatchedTracks: likedUnmatched,
+          })
+
+          for (const item of incoming) {
+            const id = `spotify:${item.id}`
+            const existing = importedById.get(id)
+            importedById.set(id, {
+              id,
+              name: item.name,
+              trackIds: Array.from(new Set(item.trackIds)),
+              createdAt: existing?.createdAt ?? Date.now(),
+              source: 'spotify',
+              externalUrl: item.externalUrl,
+              totalTracks: item.totalTracks,
+              unmatchedTracks: item.unmatchedTracks,
+            })
+          }
+
+          // Preserve prior imports for playlists Spotify temporarily hides or rate-limits.
+          const playlists = ensureFavoritesPlaylist([
+            ...state.playlists.filter((playlist) => playlist.source !== 'spotify'),
+            ...importedById.values(),
+          ])
           queueSave({ ...state, playlists })
           return { playlists }
         }),
