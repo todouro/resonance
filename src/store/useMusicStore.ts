@@ -37,7 +37,7 @@ type MusicState = {
   renamePlaylist: (playlistId: string, name: string) => void
   addTrackToPlaylist: (playlistId: string, trackId: string) => void
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => void
-  syncSpotifyPlaylists: (incoming: Array<{ id: string; name: string; trackIds: string[]; externalUrl: string; totalTracks: number; unmatchedTracks: number }>, likedTrackIds: string[], likedTotal: number, likedUnmatched: number) => void
+  syncSpotifyPlaylists: (incoming: Array<{ id: string; name: string; trackIds: string[]; externalUrl: string; totalTracks: number; matchedTracks: number; unmatchedTracks: number }>, spotifyTracks: Track[], likedTrackIds: string[], likedTotal: number, likedUnmatched: number) => void
   setActivePlaylist: (playlistId: string) => void
   setCurrentTrack: (trackId: string) => void
   setIsPlaying: (isPlaying: boolean) => void
@@ -429,7 +429,7 @@ export const useMusicStore = create<MusicState>()(
           return { playlists }
         }),
 
-      syncSpotifyPlaylists: (incoming, likedTrackIds, likedTotal, likedUnmatched) =>
+      syncSpotifyPlaylists: (incoming, spotifyTracks, likedTrackIds, likedTotal, likedUnmatched) =>
         set((state) => {
           const importedById = new Map<string, Playlist>()
           for (const playlist of state.playlists) {
@@ -464,13 +464,29 @@ export const useMusicStore = create<MusicState>()(
             })
           }
 
+          // Persist Spotify metadata rows alongside the local audio library. They are
+          // excluded from the playback queue until matching local audio becomes available.
+          const spotifyTrackMap = new Map<string, Track>(
+            state.tracks
+              .filter((track) => track.source === 'spotify')
+              .map((track) => [track.id, track]),
+          )
+          const localTrackIds = new Set(state.tracks.filter((track) => track.source !== 'spotify').map((track) => track.id))
+          for (const track of spotifyTracks) {
+            if (!localTrackIds.has(track.id)) spotifyTrackMap.set(track.id, track)
+          }
+          const tracks = [
+            ...state.tracks.filter((track) => track.source !== 'spotify'),
+            ...spotifyTrackMap.values(),
+          ]
+
           // Preserve prior imports for playlists Spotify temporarily hides or rate-limits.
           const playlists = ensureFavoritesPlaylist([
             ...state.playlists.filter((playlist) => playlist.source !== 'spotify'),
             ...importedById.values(),
           ])
-          queueSave({ ...state, playlists })
-          return { playlists }
+          queueSave({ ...state, tracks, playlists })
+          return { tracks, playlists }
         }),
 
       setActivePlaylist: (activePlaylistId) => {
