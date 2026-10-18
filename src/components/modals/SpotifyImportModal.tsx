@@ -218,7 +218,7 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
 
           {summary && (
             <>
-              <p className="spotify-import-note"><strong>Sync complete.</strong> Playlist names and available track metadata were imported. Only songs with matching local audio files can play in Resonance.</p>
+              <p className="spotify-import-note"><strong>Sync complete.</strong> Playlist names and accessible Spotify track metadata were imported. Songs with local matches play in Resonance; other songs stay visible as Spotify-only entries until you add local audio.</p>
               <div className="spotify-sync-summary">
                 <div className="spotify-sync-stat"><strong>{summary.likedMatched}/{summary.likedTotal}</strong><span>Liked Songs matched locally</span></div>
                 <div className="spotify-sync-stat"><strong>{summary.playlistCount}</strong><span>Playlists imported</span></div>
