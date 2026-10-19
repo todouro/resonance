@@ -422,14 +422,15 @@ fn score_spotify_audio_candidate(title: &str, artist: &str, candidate: &Value) -
     };
 
     // Reject covers, edits, sped/slowed variants and other common false matches.
-    let normalized_wanted = normalized_match_words(&wanted).join(" ");
-    let normalized_candidate = normalized_match_words(&combined).join(" ");
+    let normalized_wanted = format!(" {} ", normalized_match_words(&wanted).join(" "));
+    let normalized_candidate = format!(" {} ", normalized_match_words(&combined).join(" "));
     for rejected in [
         "slowed", "sped up", "speed up", "nightcore", "remix", "mashup",
         "live", "concert", "karaoke", "instrumental", "cover", "reaction",
         "shorts", "bass boosted", "8d audio",
     ] {
-        if normalized_candidate.contains(rejected) && !normalized_wanted.contains(rejected) {
+        let rejected_phrase = format!(" {} ", normalized_match_words(rejected).join(" "));
+        if normalized_candidate.contains(&rejected_phrase) && !normalized_wanted.contains(&rejected_phrase) {
             return None;
         }
     }
