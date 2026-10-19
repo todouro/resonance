@@ -12,6 +12,7 @@ type DownloadSectionProps = {
   musicFolderPath?: string
   isDesktop: boolean
   onRefreshLibrary: () => Promise<unknown> | unknown
+  onOpenSpotify: () => void
 }
 
 type DownloadTarget = { url: string; label: string; isSpotifyMatch: boolean }
@@ -67,6 +68,7 @@ export function DownloadSection({
   musicFolderPath,
   isDesktop,
   onRefreshLibrary,
+  onOpenSpotify,
 }: DownloadSectionProps) {
   const [url, setUrl] = useState('')
   const [format, setFormat] = useState<AudioFormat>('best')
@@ -256,6 +258,7 @@ export function DownloadSection({
         </div>
       </header>
 
+      <div className="download-card-heading"><div className="download-card-heading-copy"><p className="download-card-eyebrow">SPOTIFY</p><h2>Spotify links</h2><p>Look up public Spotify track, album, and playlist details here. Spotify itself does not provide downloadable audio files.</p></div><button type="button" className="spotify-connect-button" onClick={onOpenSpotify}><Music2 size={17} /> Open Spotify tools</button></div>
       <form className="download-card" onSubmit={handleDownload}>
         <div className="download-card-heading">
           <div className="download-card-heading-copy">
