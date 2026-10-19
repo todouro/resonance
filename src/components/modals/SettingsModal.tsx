@@ -220,7 +220,7 @@ export function SettingsModal({
                 <p className="settings-section-desc">Customize how the player bar and navigation sidebar appear.</p>
               </div>
               <div className="settings-option-row">
-                <div className="settings-option-copy"><strong>Player Bar Hover Mode</strong><span>When enabled, the player bar hides below the window and reappears when you approach the bottom edge or hover over it.</span></div>
+                <div className="settings-option-copy"><strong>Player Bar Hover Mode</strong><span>When enabled, the player bar keeps its existing floating position. When disabled, it docks to the bottom of the application layout.</span></div>
                 <button type="button" role="switch" aria-checked={playerBarHoverMode}
                   className={playerBarHoverMode ? 'settings-switch on' : 'settings-switch'}
                   onClick={() => setPlayerBarHoverMode(!playerBarHoverMode)}><span /></button>

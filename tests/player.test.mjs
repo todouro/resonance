@@ -300,6 +300,7 @@ test('desktop payload migration safely normalizes legacy or partial data', () =>
     shuffle: true,
     repeat: 'all',
     themeMode: 'ambient',
+    playerBarHoverMode: true,
     tracks: [{
       id: 'native:song1.mp3',
       title: 'Song One',
@@ -319,6 +320,7 @@ test('desktop payload migration safely normalizes legacy or partial data', () =>
 
   assert.equal(migrated?.version, 2)
   assert.equal(migrated?.repeat, 'all')
+  assert.equal(migrated?.playerBarHoverMode, true)
   assert.equal(migrated?.tracks[0].audioUrl, '/music/song1.mp3')
   assert.equal(migrated?.tracks[0].coverUrl, '/appdata/artwork/song1.jpg')
 
@@ -326,6 +328,7 @@ test('desktop payload migration safely normalizes legacy or partial data', () =>
   assert.notEqual(invalid, null)
   assert.equal(Array.isArray(invalid?.tracks), true)
   assert.equal(invalid?.volume, 0.82)
+  assert.equal(invalid?.playerBarHoverMode, false)
 
   const rejected = migrateDesktopLibraryPayload('not-an-object')
   assert.equal(rejected, null)
@@ -1460,4 +1463,28 @@ test('playlist actions are accessible from the playlist-name menu, not duplicate
   assert.match(app, /<PlaylistActionMenu[\s\S]*?onAddToPlaylist=\{setPlaylistToAddSongs\}/)
   assert.match(sidebar, /<PlaylistActionMenu[\s\S]*?onAddToPlaylist=\{onOpenAddToPlaylist\}/)
   assert.doesNotMatch(app, /className="library-tool-add-btn"/)
+})
+
+
+test('player bar hover preference persists through the existing Zustand settings storage', () => {
+  const previous = useMusicStore.getState().playerBarHoverMode
+  useMusicStore.getState().setPlayerBarHoverMode(true)
+  const saved = JSON.parse(localStorage.getItem('resonance-playlists-v1') ?? '{}')
+  assert.equal(saved.state?.playerBarHoverMode, true)
+  useMusicStore.getState().setPlayerBarHoverMode(previous)
+})
+
+test('player bar docking mode reserves a layout row while hover mode preserves floating layout', () => {
+  const css = fs.readFileSync(new URL('../src/App.css', import.meta.url), 'utf8')
+  const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  const settings = fs.readFileSync(new URL('../src/components/modals/SettingsModal.tsx', import.meta.url), 'utf8')
+
+  assert.match(app, /playerBarHoverMode \? 'player-bar-hover-mode' : 'player-bar-docked'/)
+  assert.match(css, /\.app-shell\.player-bar-docked\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+auto;/)
+  assert.match(css, /\.app-shell\.player-bar-docked\s*>\s*\.player-bar\s*\{[^}]*position:\s*relative;[^}]*grid-column:\s*1\s*\/\s*-1;/)
+  assert.match(css, /\.app-shell\.player-bar-docked\s*>\s*\.content\s*\{[^}]*padding-bottom:\s*36px;/)
+  assert.match(css, /\.app-shell\.player-bar-docked\s*>\s*\.player-bar\s*\{[^}]*pointer-events:\s*auto;/)
+  assert.doesNotMatch(css, /\.app-shell\.player-bar-hover-mode\s*>\s*\.player-bar\s*\{[^}]*translateY/)
+  assert.match(css, /@media \(max-width: 980px\)\s*\{[\s\S]*?\.app-shell\.player-bar-docked\s*>\s*\.player-bar\s*\{[^}]*grid-row:\s*3;/)
+  assert.match(settings, /When enabled, the player bar keeps its existing floating position/)
 })

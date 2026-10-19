@@ -36,7 +36,6 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [activeSection, setActiveSection] = useState<'library' | 'downloads'>('library')
   const [isSidebarRevealed, setIsSidebarRevealed] = useState(false)
-  const [isPlayerBarRevealed, setIsPlayerBarRevealed] = useState(false)
   const [isFirstRunSetupInProgress, setIsFirstRunSetupInProgress] = useState(false)
   const [firstRunSetupStep, setFirstRunSetupStep] = useState<'music' | 'covers'>('music')
   const [firstRunBusyAction, setFirstRunBusyAction] = useState<'music' | 'covers' | null>(null)
@@ -232,17 +231,14 @@ function App() {
         'app-shell', 'theme-normal',
         autoHideSidebar ? 'auto-hide-sidebar' : '',
         autoHideSidebar && isSidebarRevealed ? 'sidebar-revealed' : '',
-        playerBarHoverMode ? 'player-bar-hover-mode' : '',
-        playerBarHoverMode && isPlayerBarRevealed ? 'player-bar-revealed' : '',
+        playerBarHoverMode ? 'player-bar-hover-mode' : 'player-bar-docked',
       ].filter(Boolean).join(' ')}
       onMouseMove={(event) => {
         const bounds = event.currentTarget.getBoundingClientRect()
         if (autoHideSidebar && event.clientX - bounds.left <= 14) setIsSidebarRevealed(true)
-        if (playerBarHoverMode && bounds.bottom - event.clientY <= 32) setIsPlayerBarRevealed(true)
       }}
       onMouseLeave={() => {
         if (autoHideSidebar) setIsSidebarRevealed(false)
-        if (playerBarHoverMode) setIsPlayerBarRevealed(false)
       }}
       onContextMenu={(event) => event.preventDefault()}
       onDragOver={(event) => event.preventDefault()}
@@ -411,9 +407,6 @@ function App() {
         onShuffle={toggleShuffle}
         onRepeat={cycleRepeat}
         onVolume={setVolume}
-        hoverMode={playerBarHoverMode}
-        onHoverEnter={() => setIsPlayerBarRevealed(true)}
-        onHoverLeave={() => setIsPlayerBarRevealed(false)}
       />
 
       <AnimatePresence>
