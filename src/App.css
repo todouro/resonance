@@ -3857,3 +3857,14 @@ h3 {
 .spotify-preview-track small { color: var(--text-secondary, #aaa); font-size: 11px; }
 .spotify-import-success { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid rgba(30,215,96,.28); border-radius: 9px; color: var(--text-primary, #f2f2f2); font-size: 13px; line-height: 1.5; }
 .spotify-import-success p { margin: 0; color: var(--text-secondary, #aaa); }
+
+
+.settings-folder-list { display: flex; flex-direction: column; gap: 8px; }
+.settings-folder-row { display: flex; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.025); min-width: 0; }
+.settings-folder-copy { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.settings-folder-copy strong { font-size: 13px; color: var(--text); }
+.settings-folder-copy span { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-folder-action, .settings-folder-rescan { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.04); color: var(--text); padding: 6px 10px; cursor: pointer; }
+.settings-folder-rescan { width: 34px; padding: 0; }
+.settings-folder-action:hover:not(:disabled), .settings-folder-rescan:hover:not(:disabled) { background: rgba(255,255,255,.09); }
+.settings-folder-rescan:disabled { opacity: .4; cursor: not-allowed; }
