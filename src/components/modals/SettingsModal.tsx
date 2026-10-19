@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { CheckFilled, CloseFilled, FolderImageFilled, FolderMusicFilled, RefreshFilled, SettingsFilled } from '../icons'
 import { useMusicStore } from '../../store/useMusicStore'
 import {
@@ -11,8 +11,218 @@ import {
   type ShortcutAction,
 } from '../../utils/keyboardShortcuts.ts'
 
-type SettingsTab = 'Shortcuts' | 'Folders' | 'Appearance'
+const SETTINGS_TABS = ['Shortcuts', 'Folders', 'Appearance'] as const
+type SettingsTab = (typeof SETTINGS_TABS)[number]
 type FolderAction = () => void | Promise<void>
+
+type SettingsTabRect = { left: number; top: number; width: number; height: number }
+type SettingsTabMotionState = {
+  x0: number
+  x1: number
+  v0: number
+  v1: number
+  alpha: number
+  rects: Array<SettingsTabRect | null>
+  raf: number
+  last: number
+  initialized: boolean
+}
+type SettingsTabMotionEngine = { refresh: (snap?: boolean) => void; wake: () => void }
+
+function SettingsTabNavigation({
+  activeTab,
+  onChange,
+  reducedMotion,
+}: {
+  activeTab: SettingsTab
+  onChange: (tab: SettingsTab) => void
+  reducedMotion: boolean
+}) {
+  const navRef = useRef<HTMLElement | null>(null)
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const indicatorRef = useRef<HTMLSpanElement | null>(null)
+  const inkRef = useRef<HTMLDivElement | null>(null)
+  const activeIndexRef = useRef(SETTINGS_TABS.indexOf(activeTab))
+  const reducedMotionRef = useRef(reducedMotion)
+  const engineRef = useRef<SettingsTabMotionEngine | null>(null)
+  activeIndexRef.current = SETTINGS_TABS.indexOf(activeTab)
+  reducedMotionRef.current = reducedMotion
+
+  useLayoutEffect(() => {
+    const nav = navRef.current
+    if (!nav) return undefined
+
+    const state: SettingsTabMotionState = {
+      x0: 0,
+      x1: 0,
+      v0: 0,
+      v1: 0,
+      alpha: 0,
+      rects: [],
+      raf: 0,
+      last: 0,
+      initialized: false,
+    }
+    let disposed = false
+
+    const render = () => {
+      const indicator = indicatorRef.current
+      const ink = inkRef.current
+      const activeRect = state.rects[activeIndexRef.current] ?? state.rects.find((rect): rect is SettingsTabRect => rect !== null)
+      if (!indicator || !ink || !activeRect) return
+
+      const width = Math.max(0, state.x1 - state.x0)
+      indicator.style.width = String(width) + 'px'
+      indicator.style.height = String(activeRect.height) + 'px'
+      indicator.style.transform = 'translate3d(' + state.x0 + 'px, ' + activeRect.top + 'px, 0)'
+      indicator.style.opacity = String(state.alpha)
+
+      const navWidth = nav.clientWidth
+      const navHeight = nav.clientHeight
+      const left = Math.max(0, state.x0)
+      const right = Math.max(0, navWidth - state.x1)
+      const top = Math.max(0, activeRect.top)
+      const bottom = Math.max(0, navHeight - activeRect.top - activeRect.height)
+      const radius = getComputedStyle(nav).getPropertyValue('--settings-tab-radius').trim() || '9px'
+      ink.style.clipPath = 'inset(' + top + 'px ' + right + 'px ' + bottom + 'px ' + left + 'px round ' + radius + ')'
+    }
+
+    const measure = (snap: boolean) => {
+      const navRect = nav.getBoundingClientRect()
+      const originLeft = navRect.left + nav.clientLeft
+      const originTop = navRect.top + nav.clientTop
+      state.rects = tabRefs.current.map((element) => {
+        if (!element) return null
+        const rect = element.getBoundingClientRect()
+        return {
+          left: rect.left - originLeft,
+          top: rect.top - originTop,
+          width: rect.width,
+          height: rect.height,
+        }
+      })
+
+      const target = state.rects[activeIndexRef.current]
+      if (!target) return
+      if (!state.initialized || snap || reducedMotionRef.current) {
+        state.x0 = target.left
+        state.x1 = target.left + target.width
+        state.v0 = 0
+        state.v1 = 0
+        state.alpha = 1
+        state.initialized = true
+      }
+      render()
+    }
+
+    const tick = (now: number) => {
+      state.raf = 0
+      const target = state.rects[activeIndexRef.current]
+      if (!target || disposed) return
+
+      const dt = state.last ? Math.min(0.05, (now - state.last) / 1000) : 1 / 60
+      state.last = now
+      if (reducedMotionRef.current) {
+        state.x0 = target.left
+        state.x1 = target.left + target.width
+        state.v0 = 0
+        state.v1 = 0
+        state.alpha = 1
+      } else {
+        const target0 = target.left
+        const target1 = target.left + target.width
+        const direction = Math.sign((target0 + target1) / 2 - (state.x0 + state.x1) / 2)
+        const bounce = 0.3
+        const stretch = 0.5
+        const zeta = 1 - 0.55 * bounce
+        const base = 520
+        const lead = base * (1 + 0.9 * stretch)
+        const trail = base * (1 - 0.5 * stretch)
+        const k0 = direction < 0 ? lead : direction > 0 ? trail : base
+        const k1 = direction > 0 ? lead : direction < 0 ? trail : base
+        const steps = Math.ceil(dt / (1 / 240))
+        const h = dt / steps
+        for (let i = 0; i < steps; i++) {
+          state.v0 += (-k0 * (state.x0 - target0) - 2 * zeta * Math.sqrt(k0) * state.v0) * h
+          state.x0 += state.v0 * h
+          state.v1 += (-k1 * (state.x1 - target1) - 2 * zeta * Math.sqrt(k1) * state.v1) * h
+          state.x1 += state.v1 * h
+        }
+        state.alpha += (1 - state.alpha) * (1 - Math.exp(-dt / 0.06))
+      }
+
+      render()
+      const busy =
+        Math.abs(state.x0 - target.left) > 0.05 ||
+        Math.abs(state.x1 - (target.left + target.width)) > 0.05 ||
+        Math.abs(state.v0) > 0.5 ||
+        Math.abs(state.v1) > 0.5 ||
+        state.alpha < 0.999
+      if (busy) state.raf = requestAnimationFrame(tick)
+    }
+
+    const wake = () => {
+      if (!state.raf && !disposed) {
+        state.last = 0
+        state.raf = requestAnimationFrame(tick)
+      }
+    }
+
+    const refresh = (snap = false) => measure(snap)
+    engineRef.current = { refresh, wake }
+    measure(true)
+
+    const handleResize = () => measure(true)
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null
+    resizeObserver?.observe(nav)
+    tabRefs.current.forEach((element) => {
+      if (element) resizeObserver?.observe(element)
+    })
+    window.addEventListener('resize', handleResize)
+    void document.fonts?.ready.then(() => {
+      if (!disposed) handleResize()
+    }).catch(() => {})
+
+    return () => {
+      disposed = true
+      if (state.raf) cancelAnimationFrame(state.raf)
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', handleResize)
+      if (engineRef.current?.refresh === refresh) engineRef.current = null
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    const engine = engineRef.current
+    if (!engine) return
+    if (reducedMotion) engine.refresh(true)
+    else engine.wake()
+  }, [activeTab, reducedMotion])
+
+  return (
+    <nav ref={navRef} className="settings-tabs" aria-label="Settings sections">
+      {SETTINGS_TABS.map((tab, index) => (
+        <button
+          key={tab}
+          ref={(element) => {
+            tabRefs.current[index] = element
+          }}
+          type="button"
+          className={activeTab === tab ? 'settings-tab active' : 'settings-tab'}
+          aria-pressed={activeTab === tab}
+          onClick={() => onChange(tab)}
+        >
+          {tab}
+        </button>
+      ))}
+      <span ref={indicatorRef} className="settings-tab-indicator" aria-hidden="true" />
+      <div ref={inkRef} className="settings-tabs-ink" aria-hidden="true">
+        {SETTINGS_TABS.map((tab) => <span key={tab}>{tab}</span>)}
+      </div>
+    </nav>
+  )
+}
+
 
 export type SettingsModalProps = {
   onClose: () => void
@@ -44,10 +254,95 @@ export function SettingsModal({
   const autoHideSidebar = useMusicStore((state) => state.autoHideSidebar)
   const setAutoHideSidebar = useMusicStore((state) => state.setAutoHideSidebar)
   const [activeTab, setActiveTab] = useState<SettingsTab>('Shortcuts')
+  const prefersReducedMotion = useReducedMotion() ?? false
+  const modalCardRef = useRef<HTMLDivElement>(null)
+  const heightAnimationCleanupRef = useRef<(() => void) | null>(null)
+  const previousTabRef = useRef<SettingsTab>(activeTab)
   const [editingAction, setEditingAction] = useState<ShortcutAction | null>(null)
   const [shortcutError, setShortcutError] = useState<string | null>(null)
   const musicInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
+
+  useLayoutEffect(() => {
+    const card = modalCardRef.current
+    if (!card) return
+    const changed = previousTabRef.current !== activeTab
+    previousTabRef.current = activeTab
+    if (!changed) return
+
+    if (prefersReducedMotion) {
+      heightAnimationCleanupRef.current?.()
+      card.style.removeProperty('height')
+      card.style.removeProperty('transition')
+      return
+    }
+
+    let finished = false
+    let observer: ResizeObserver | null = null
+
+    const cleanup = () => {
+      card.removeEventListener('transitionend', handleTransitionEnd)
+      window.removeEventListener('resize', updateTargetHeight)
+      observer?.disconnect()
+      if (heightAnimationCleanupRef.current === cleanup) heightAnimationCleanupRef.current = null
+    }
+    const finish = () => {
+      if (finished) return
+      finished = true
+      cleanup()
+      card.style.height = 'auto'
+      card.style.removeProperty('transition')
+    }
+    const getTargetHeight = () => {
+      const borderAndScrollbar = Math.max(0, card.offsetHeight - card.clientHeight)
+      return Math.min(card.scrollHeight + borderAndScrollbar, Math.floor(window.innerHeight * 0.9))
+    }
+    const updateTargetHeight = () => {
+      if (finished) return
+      const targetHeight = getTargetHeight()
+      const currentTarget = Number.parseFloat(card.style.height)
+      if (!Number.isFinite(currentTarget) || Math.abs(targetHeight - currentTarget) > 1) {
+        card.style.height = String(targetHeight) + 'px'
+      }
+    }
+    const handleTransitionEnd = (event: TransitionEvent) => {
+      if (event.target === card && event.propertyName === 'height') finish()
+    }
+
+    const startHeight = card.getBoundingClientRect().height
+    card.style.transition = 'height 380ms cubic-bezier(0.22, 1, 0.36, 1)'
+    const targetHeight = getTargetHeight()
+    card.style.height = String(targetHeight) + 'px'
+    card.addEventListener('transitionend', handleTransitionEnd)
+    window.addEventListener('resize', updateTargetHeight)
+
+    const activePanel = card.querySelector('.settings-panel')
+    if (activePanel && typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(updateTargetHeight)
+      observer.observe(activePanel)
+    }
+
+    heightAnimationCleanupRef.current = cleanup
+    if (Math.abs(targetHeight - startHeight) < 1) finish()
+
+    return cleanup
+  }, [activeTab, prefersReducedMotion])
+
+  const changeTab = (tab: SettingsTab) => {
+    if (tab === activeTab) return
+    heightAnimationCleanupRef.current?.()
+    const card = modalCardRef.current
+    if (card && !prefersReducedMotion) {
+      const currentHeight = card.getBoundingClientRect().height
+      card.style.transition = 'none'
+      card.style.height = String(currentHeight) + 'px'
+      void card.offsetHeight
+    } else if (card) {
+      card.style.removeProperty('height')
+      card.style.removeProperty('transition')
+    }
+    setActiveTab(tab)
+  }
 
   useEffect(() => {
     function handleKeyDown(event: globalThis.KeyboardEvent) {
@@ -115,7 +410,7 @@ export function SettingsModal({
     <motion.div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"
       aria-labelledby="settings-modal-title" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
       exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-      <motion.div className="modal-card settings-modal-card" onClick={(event) => event.stopPropagation()}
+      <motion.div ref={modalCardRef} className="modal-card settings-modal-card" onClick={(event) => event.stopPropagation()}
         initial={{ opacity: 0, scale: 0.94, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 12 }} transition={{ type: 'spring', damping: 26, stiffness: 380 }}>
         <header className="modal-header">
@@ -131,12 +426,7 @@ export function SettingsModal({
           </button>
         </header>
 
-        <nav className="settings-tabs" aria-label="Settings sections">
-          {(['Shortcuts', 'Folders', 'Appearance'] as const).map((tab) => (
-            <button key={tab} type="button" className={activeTab === tab ? 'settings-tab active' : 'settings-tab'}
-              aria-pressed={activeTab === tab} onClick={() => setActiveTab(tab)}>{tab}</button>
-          ))}
-        </nav>
+        <SettingsTabNavigation activeTab={activeTab} onChange={changeTab} reducedMotion={prefersReducedMotion} />
 
         <div className="settings-tab-content">
           {activeTab === 'Shortcuts' && (
