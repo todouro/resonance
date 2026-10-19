@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import type { ChangeEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Download, ExternalLink, Music2 } from 'lucide-react'
+import { Download, ExternalLink } from 'lucide-react'
 import {
   AudioLinesFilled,
   CheckFilled,
@@ -44,7 +44,6 @@ export type SidebarProps = {
   onOpenSettings?: () => void
   isDownloadsActive?: boolean
   onOpenDownloads?: () => void
-  onOpenSpotify?: () => void
 }
 
 export function Sidebar({
@@ -73,7 +72,6 @@ export function Sidebar({
   onOpenSettings,
   isDownloadsActive = false,
   onOpenDownloads,
-  onOpenSpotify,
 }: SidebarProps) {
   const musicInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
@@ -196,108 +194,6 @@ export function Sidebar({
           </button>
         </form>
 
-
-        {/* Music Folder row with dedicated Rescan button */}
-        <div className="nav-item nav-folder-row">
-          <button
-            type="button"
-            className="nav-folder-trigger"
-            title={
-              musicFolderName
-                ? `Music folder: ${musicFolderName} (click to change)`
-                : 'Select or import a music folder'
-            }
-            onClick={handleMusicTriggerClick}
-          >
-            <FolderMusicFilled size={18} />
-            <span className="nav-folder-label">
-              {isScanningMusic ? 'Scanning...' : 'Music folder'}
-            </span>
-          </button>
-
-          {!isDesktop && (
-            <input
-              ref={musicInputRef}
-              type="file"
-              multiple
-              onChange={onAddMusicFolder}
-              {...{ webkitdirectory: '', directory: '' }}
-              style={{ display: 'none' }}
-              aria-hidden="true"
-            />
-          )}
-
-          <button
-            type="button"
-            className={`nav-rescan-btn ${isScanningMusic ? 'scanning' : ''}`}
-            title={
-              musicFolderName
-                ? `Rescan "${musicFolderName}" for new songs`
-                : 'Rescan music folder for new songs'
-            }
-            aria-label="Rescan music folder"
-            onClick={handleRescanMusicClick}
-            disabled={isScanningMusic}
-          >
-            <RefreshFilled size={14} className={isScanningMusic ? 'spinning' : ''} />
-          </button>
-        </div>
-
-        {/* Cover Folder row with dedicated Rescan button */}
-        <div className="nav-item nav-folder-row">
-          <button
-            type="button"
-            className="nav-folder-trigger"
-            title={
-              coverFolderName
-                ? `Cover folder: ${coverFolderName} (click to change)`
-                : 'Select or import a cover artwork folder'
-            }
-            onClick={handleCoverTriggerClick}
-          >
-            <FolderImageFilled size={18} />
-            <span className="nav-folder-label">
-              {isScanningCovers ? 'Scanning...' : 'Cover folder'}
-            </span>
-          </button>
-
-          {!isDesktop && (
-            <input
-              ref={coverInputRef}
-              type="file"
-              multiple
-              onChange={onAddCoverFolder}
-              {...{ webkitdirectory: '', directory: '' }}
-              style={{ display: 'none' }}
-              aria-hidden="true"
-            />
-          )}
-
-          <button
-            type="button"
-            className={`nav-rescan-btn ${isScanningCovers ? 'scanning' : ''}`}
-            title={
-              coverFolderName
-                ? `Rescan "${coverFolderName}" for new artwork`
-                : 'Rescan cover folder for new artwork'
-            }
-            aria-label="Rescan cover folder"
-            onClick={handleRescanCoverClick}
-            disabled={isScanningCovers}
-          >
-            <RefreshFilled size={14} className={isScanningCovers ? 'spinning' : ''} />
-          </button>
-        </div>
-
-        <button
-          type="button"
-          className="nav-item spotify-import-nav"
-          title="Connect Spotify and import your playlists"
-          onClick={onOpenSpotify}
-        >
-          <Music2 size={18} />
-          <span>Spotify Import</span>
-        </button>
 
         <button
           type="button"
