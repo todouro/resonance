@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { findMissingTrackIds, isPathInside, normalizePathForCompare } from '../src/utils/missingTracks.ts'
 import { shouldIgnoreShortcut } from '../src/utils/shortcutGuard.ts'
 import { DEFAULT_KEYBOARD_SHORTCUTS, formatShortcut, matchesKeyboardShortcut, normalizeShortcutBinding, sanitizeKeyboardShortcutBindings } from '../src/utils/keyboardShortcuts.ts'
@@ -221,3 +222,29 @@ test('persisted shortcut preferences are sanitized and duplicate bindings are re
   assert.equal(new Set(Object.values(saved)).size, Object.values(saved).length)
   assert.equal(saved.cycleRepeat, DEFAULT_KEYBOARD_SHORTCUTS.cycleRepeat)
 })
+
+test('UI typography tokens and form controls stay consistent across screens', () => {
+  const globalStyles = fs.readFileSync(new URL('../src/index.css', import.meta.url), 'utf8')
+  const styles = fs.readFileSync(new URL('../src/App.css', import.meta.url), 'utf8')
+  const downloads = fs.readFileSync(new URL('../src/components/DownloadSection.tsx', import.meta.url), 'utf8')
+
+  // Space Grotesk remains the single UI family; fields and controls share established sizes.
+  assert.match(globalStyles, /--font-ui:\s*"Space Grotesk"/)
+  assert.match(globalStyles, /font-family:\s*var\(--font-ui\)/)
+  assert.match(globalStyles, /--font-size-field:\s*15px;/)
+  assert.match(globalStyles, /--font-size-control:\s*13px;/)
+  assert.match(globalStyles, /--radius-control:\s*12px;/)
+  assert.match(globalStyles, /--radius-control-compact:\s*10px;/)
+
+  assert.match(styles, /\.playlist-form input,[\s\S]*?\.download-url-textarea\s*\{\s*font-family:\s*var\(--font-ui\);\s*font-size:\s*var\(--font-size-field\);/)
+  assert.match(styles, /\.form-group input\s*\{[\s\S]*?border-radius:\s*var\(--radius-control\);/)
+  assert.match(styles, /\.download-format-wrap select\s*\{[\s\S]*?appearance:\s*none;[\s\S]*?-webkit-appearance:\s*none;/)
+  assert.match(styles, /\.download-format-wrap:focus-within\s*\{[\s\S]*?box-shadow:\s*0 0 0 3px var\(--focus-ring\);/)
+  assert.match(styles, /button:focus-visible\s*\{[\s\S]*?outline:\s*2px solid var\(--lime/)
+
+  // Keep a single base rule for each Downloads field, rather than competing old/new overrides.
+  assert.equal([...styles.matchAll(/\.download-url-input\s*\{/g)].length, 1)
+  assert.equal([...styles.matchAll(/\.download-format-wrap\s*\{/g)].length, 1)
+  assert.match(downloads, /<ChevronDown size=\{15\} className="download-format-chevron" aria-hidden="true" \/>/)
+})
+
