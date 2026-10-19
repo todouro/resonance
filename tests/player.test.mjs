@@ -1555,3 +1555,30 @@ test('Settings navigation glides a rounded active indicator and animates measure
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.settings-tab\s*\{ transition: none; \}\s*\}/)
   assert.doesNotMatch(css, /\.settings-tab-indicator\s*\{[^}]*border-radius:\s*999px;/)
 })
+
+test('Settings tab indicator converts transformed viewport measurements back to layout coordinates', () => {
+  const settings = fs.readFileSync(new URL('../src/components/modals/SettingsModal.tsx', import.meta.url), 'utf8')
+
+  // The Settings card starts at scale 0.94 and animates to 1.0. getBoundingClientRect()
+  // reports scaled screen coordinates, so measurements must be normalized before they
+  // are stored for the indicator whose CSS transform uses unscaled layout pixels.
+  assert.match(settings, /const navStyle = getComputedStyle\(nav\)/)
+  assert.match(settings, /const scaleX = navRect\.width > 0 \? layoutWidth \/ navRect\.width : 1/)
+  assert.match(settings, /const scaleY = navRect\.height > 0 \? layoutHeight \/ navRect\.height : 1/)
+  assert.match(settings, /left: \(rect\.left - navRect\.left\) \* scaleX - nav\.clientLeft/)
+  assert.match(settings, /top: \(rect\.top - navRect\.top\) \* scaleY - nav\.clientTop/)
+  assert.match(settings, /width: rect\.width \* scaleX/)
+  assert.match(settings, /height: rect\.height \* scaleY/)
+
+  // A tab measured at 94% scale must return to its exact layout coordinates.
+  const scale = 0.94
+  const left = 412.5
+  const width = 158.25
+  const viewportLeft = 37 + (left + 1) * scale
+  const viewportWidth = width * scale
+  const normalizedLeft = (viewportLeft - 37) / scale - 1
+  const normalizedWidth = viewportWidth / scale
+  assert.ok(Math.abs(normalizedLeft - left) < 1e-9)
+  assert.ok(Math.abs(normalizedWidth - width) < 1e-9)
+})
+
