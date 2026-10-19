@@ -1,17 +1,34 @@
-import { useEffect, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { useEffect, useRef, useState } from 'react'
 import { LoaderCircle, Music2, X } from 'lucide-react'
 import { fetchPublicSpotifyLink } from '../../services/spotify'
 import type { SpotifyPublicLinkResult, SpotifyTrackSummary } from '../../services/spotify'
 import { useMusicStore } from '../../store/useMusicStore'
 import type { Track } from '../../types'
 
-type SpotifyImportModalProps = { onClose: () => void }
+type SpotifyImportModalProps = {
+  onClose: () => void
+  musicFolderPath?: string
+  isDesktop: boolean
+  onRefreshLibrary: () => Promise<unknown> | unknown
+}
 type ImportSummary = {
   name: string
   kind: string
   trackCount: number
+  downloaded: number
   matched: number
   missing: number
+  failures: string[]
+  playlistCreated: boolean
+}
+type DownloadProgress = {
+  stage: 'preparing' | 'downloading'
+  percent: number | null
+  speed: string
+  eta: string
+  message: string
 }
 
 function normalize(value: string): string {
@@ -26,7 +43,7 @@ function normalize(value: string): string {
 function matchLocalTracks(
   spotifyTracks: SpotifyTrackSummary[],
   localTracks: Track[],
-): { ids: string[]; matched: number; missing: number; placeholders: Track[] } {
+): { ids: string[]; matched: number; missing: number } {
   const playable = localTracks.filter((track) => !track.unavailable && Boolean(track.filePath || track.audioUrl))
   const byTitle = new Map<string, Track[]>()
   for (const track of playable) {
@@ -38,45 +55,22 @@ function matchLocalTracks(
   }
 
   const ids: string[] = []
-  const placeholders: Track[] = []
   let matched = 0
   for (const spotifyTrack of spotifyTracks) {
     const candidates = byTitle.get(normalize(spotifyTrack.name)) ?? []
     const artistKeys = spotifyTrack.artists.map(normalize).filter(Boolean)
     const localTrack = candidates.find((candidate) => {
       const localArtist = normalize(candidate.artist)
-      return artistKeys.some((artist) => localArtist === artist || localArtist.includes(artist) || artist.includes(localArtist))
+      return artistKeys.length === 0 || artistKeys.some((artist) => localArtist === artist || localArtist.includes(artist) || artist.includes(localArtist))
     })
     if (localTrack) {
       matched += 1
       ids.push(localTrack.id)
-      continue
     }
-
-    const fallbackIdentity = normalize(`${spotifyTrack.name} ${spotifyTrack.artists.join(' ')}`)
-    const id = `spotify-track:${spotifyTrack.id || encodeURIComponent(fallbackIdentity)}`
-    ids.push(id)
-    placeholders.push({
-      id,
-      title: spotifyTrack.name,
-      artist: spotifyTrack.artists.join(', ') || 'Unknown artist',
-      album: spotifyTrack.album || 'Spotify',
-      duration: spotifyTrack.duration ?? 0,
-      fileName: spotifyTrack.name,
-      coverUrl: spotifyTrack.coverUrl,
-      accent: '#1ed760',
-      source: 'spotify',
-      externalUrl: spotifyTrack.externalUrl || `https://open.spotify.com/track/${spotifyTrack.id}`,
-      unavailable: true,
-    })
   }
 
-  return {
-    ids: Array.from(new Set(ids)),
-    matched,
-    missing: Math.max(0, spotifyTracks.length - matched),
-    placeholders: Array.from(new Map(placeholders.map((track) => [track.id, track])).values()),
-  }
+  const uniqueIds = Array.from(new Set(ids))
+  return { ids: uniqueIds, matched, missing: Math.max(0, spotifyTracks.length - matched) }
 }
 
 function SpotifyMark() {
@@ -88,12 +82,16 @@ function SpotifyMark() {
   )
 }
 
-export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
+export function SpotifyImportModal({ onClose, musicFolderPath, isDesktop, onRefreshLibrary }: SpotifyImportModalProps) {
   const [spotifyUrl, setSpotifyUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [preview, setPreview] = useState<SpotifyPublicLinkResult | null>(null)
   const [summary, setSummary] = useState<ImportSummary | null>(null)
+  const [downloadStatus, setDownloadStatus] = useState('')
+  const [cancelled, setCancelled] = useState(false)
+  const cancelRequested = useRef(false)
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -102,6 +100,34 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [busy, onClose])
+
+  useEffect(() => {
+    if (!isDesktop) return
+    let unlisten: (() => void) | undefined
+    let disposed = false
+    listen<DownloadProgress>('download-progress', (event) => setDownloadProgress(event.payload))
+      .then((stop) => {
+        if (disposed) stop()
+        else unlisten = stop
+      })
+      .catch(() => {
+        // A missing progress event must not prevent downloads.
+      })
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [isDesktop])
+
+  const handleCancel = async () => {
+    cancelRequested.current = true
+    setCancelled(true)
+    try {
+      await invoke<boolean>('cancel_download')
+    } catch {
+      // There may be no active media process if we are between tracks.
+    }
+  }
 
   const handleFetch = async () => {
     setError(null)
@@ -126,35 +152,97 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
     }
   }
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (!preview || busy) return
-    setError(null)
-    setBusy(true)
-    try {
-      const localTracks = useMusicStore.getState().tracks
-      const matched = matchLocalTracks(preview.tracks, localTracks)
-      const playlistId = `spotify-public:${preview.kind}:${preview.id}`
+    if (!isDesktop) {
+      setError('Track downloads are available in the Resonance Windows desktop app.')
+      return
+    }
+    if (!musicFolderPath) {
+      setError('Choose your Music folder in Settings before downloading Spotify tracks.')
+      return
+    }
+    if (preview.tracks.length > 20 && !window.confirm(
+      `This link exposes ${preview.tracks.length} tracks. Resonance will search for a likely audio match for each missing local track. Continue downloading?`,
+    )) return
 
-      useMusicStore.getState().importSpotifyPublicPlaylist({
-        id: playlistId,
-        name: preview.name,
-        externalUrl: preview.externalUrl,
-        totalTracks: preview.totalTracks,
-        unmatchedTracks: matched.missing,
-        trackIds: matched.ids,
-      }, matched.placeholders)
+    setError(null)
+    setSummary(null)
+    setBusy(true)
+    setCancelled(false)
+    cancelRequested.current = false
+    setDownloadStatus('Preparing Spotify track downloads…')
+    let downloaded = 0
+    const failures: string[] = []
+
+    try {
+      for (let index = 0; index < preview.tracks.length; index += 1) {
+        if (cancelRequested.current) break
+        const track = preview.tracks[index]
+        const existing = matchLocalTracks([track], useMusicStore.getState().tracks)
+        if (existing.matched > 0) {
+          setDownloadStatus(`Already in your library: ${track.name} (${index + 1}/${preview.tracks.length})`)
+          continue
+        }
+
+        const artist = track.artists.join(', ')
+        setDownloadStatus(`Finding audio match ${index + 1}/${preview.tracks.length}: ${artist ? `${artist} — ` : ''}${track.name}`)
+        setDownloadProgress(null)
+        try {
+          await invoke<string>('download_spotify_track', {
+            title: track.name,
+            artist,
+            outputDir: musicFolderPath,
+            format: 'best',
+          })
+          downloaded += 1
+        } catch (cause) {
+          if (cancelRequested.current) break
+          const detail = cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : 'No suitable audio source was found.'
+          failures.push(`${track.name}: ${detail}`)
+        }
+      }
+
+      if (downloaded > 0) {
+        setDownloadStatus(`Scanning Music folder for ${downloaded} downloaded file(s)…`)
+        await onRefreshLibrary()
+      }
+
+      const matched = matchLocalTracks(preview.tracks, useMusicStore.getState().tracks)
+      const playlistCreated = matched.ids.length > 0
+      if (playlistCreated) {
+        useMusicStore.getState().importSpotifyPublicPlaylist({
+          id: `spotify-public:${preview.kind}:${preview.id}`,
+          name: preview.name,
+          externalUrl: preview.externalUrl,
+          totalTracks: preview.totalTracks,
+          unmatchedTracks: matched.missing,
+          trackIds: matched.ids,
+        }, [])
+      }
 
       setSummary({
         name: preview.name,
         kind: preview.kind,
         trackCount: preview.tracks.length,
+        downloaded,
         matched: matched.matched,
         missing: matched.missing,
+        failures: failures.slice(0, 5),
+        playlistCreated,
       })
+      if (!playlistCreated) {
+        setError('No playable local audio files were found, so Resonance did not create a metadata-only playlist. Check the download failures below and try again.')
+      } else if (failures.length > 0) {
+        setError(`Finished with ${failures.length} download failure(s). Only tracks backed by real local files were added to the playlist.`)
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not import this Spotify link into Resonance.')
+      setError(cause instanceof Error ? cause.message : 'Could not download tracks from this Spotify link.')
     } finally {
       setBusy(false)
+      setDownloadProgress(null)
+      setDownloadStatus(cancelRequested.current ? 'Download cancelled.' : '')
+      cancelRequested.current = false
     }
   }
 
@@ -188,6 +276,7 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
                 setSpotifyUrl(event.target.value)
                 setPreview(null)
                 setSummary(null)
+                setError(null)
               }}
               placeholder="https://open.spotify.com/playlist/..."
               autoComplete="off"
@@ -200,12 +289,13 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
 
           <div className="spotify-import-actions">
             <button type="button" className="spotify-connect-button" disabled={busy || !spotifyUrl.trim()} onClick={() => void handleFetch()}>
-              {busy ? <><LoaderCircle size={16} className="spinning" /> Fetching Spotify tracks…</> : <><Music2 size={17} /> Fetch tracks</>}
+              {busy ? <><LoaderCircle size={16} className="spinning" /> Working…</> : <><Music2 size={17} /> Fetch tracks</>}
             </button>
             {preview && (
-              <button type="button" className="spotify-secondary-button" disabled={busy} onClick={handleImport}>
-                Add to Resonance
+              <button type="button" className="spotify-secondary-button" disabled={busy || !isDesktop || !musicFolderPath} onClick={() => void handleImport()}>
+                {busy ? <><LoaderCircle size={15} className="spinning" /> Downloading…</> : 'Download tracks & create playlist'}
               </button>
+              {busy && <button type="button" className="spotify-secondary-button" onClick={() => void handleCancel()}>Cancel</button>}
             )}
           </div>
 
@@ -215,7 +305,7 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
             <section className="spotify-public-preview" aria-live="polite">
               <div className="spotify-status-line"><Music2 size={16} /> Public {preview.kind} found</div>
               <strong className="spotify-preview-title">{preview.name}</strong>
-              <p className="spotify-import-note">{preview.tracks.length} track(s) exposed by Spotify are ready to import. The list may be partial if Spotify's public page doesn't expose every track.</p>
+              <p className="spotify-import-note">{preview.tracks.length} track(s) exposed by Spotify. Resonance will search available audio sources for tracks not already in your Music folder; only tracks backed by real local audio files will be added to the playlist.</p>
               <div className="spotify-preview-track-list">
                 {preview.tracks.slice(0, 8).map((track) => (
                   <div className="spotify-preview-track" key={track.id}>
@@ -228,16 +318,25 @@ export function SpotifyImportModal({ onClose }: SpotifyImportModalProps) {
             </section>
           )}
 
+          {busy && (
+            <div className="spotify-import-note" role="status" aria-live="polite">
+              {downloadStatus || 'Preparing downloads…'}
+              {downloadProgress?.stage === 'downloading' && downloadProgress.percent !== null ? ` · ${Math.round(downloadProgress.percent)}%` : ''}
+            </div>
+          )}
+
           {summary && (
             <div className="spotify-import-success" role="status">
-              <strong>Added “{summary.name}” to Resonance.</strong>
-              <p>{summary.trackCount} tracks imported from the public {summary.kind} link; {summary.matched} matched local audio files and {summary.missing} need local audio.</p>
+              <strong>{summary.playlistCreated ? `Downloaded and added “${summary.name}” to Resonance.` : `No local playlist created for “${summary.name}”.`}</strong>
+              <p>Downloaded {summary.downloaded} new audio file(s). The playlist contains {summary.matched} track(s) backed by local audio; {summary.missing} track(s) remain unavailable.</p>
+              {cancelled && <p>Download was cancelled by you.</p>}
+              {summary.failures.length > 0 && <div className="spotify-download-failures"><strong>Download failures</strong>{summary.failures.map((failure) => <p key={failure}>{failure}</p>)}</div>}
             </div>
           )}
         </div>
 
         <footer className="spotify-attribution">
-          Public Spotify metadata only. Spotify audio is not downloaded or streamed by Resonance. For tracks to play locally, add audio files to your Music folder and rescan.
+          Spotify provides metadata, not downloadable audio. Resonance searches for a likely matching media source, saves successfully downloaded files to your selected Music folder, and only adds tracks that exist locally. Check that you have permission to download any source.
         </footer>
       </div>
     </div>
