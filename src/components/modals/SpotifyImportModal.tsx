@@ -31,6 +31,10 @@ type DownloadProgress = {
   message: string
 }
 
+function normalizePath(value: string): string {
+  return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+}
+
 function normalize(value: string): string {
   return value.normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -173,6 +177,7 @@ export function SpotifyImportModal({ onClose, musicFolderPath, isDesktop, onRefr
     cancelRequested.current = false
     setDownloadStatus('Preparing Spotify track downloads…')
     let downloaded = 0
+    const downloadedFiles: Array<{ track: SpotifyTrackSummary; path: string }> = []
     const failures: string[] = []
 
     try {
@@ -189,12 +194,13 @@ export function SpotifyImportModal({ onClose, musicFolderPath, isDesktop, onRefr
         setDownloadStatus(`Finding audio match ${index + 1}/${preview.tracks.length}: ${artist ? `${artist} — ` : ''}${track.name}`)
         setDownloadProgress(null)
         try {
-          await invoke<string>('download_spotify_track', {
+          const savedPath = await invoke<string>('download_spotify_track', {
             title: track.name,
             artist,
             outputDir: musicFolderPath,
             format: 'best',
           })
+          downloadedFiles.push({ track, path: savedPath })
           downloaded += 1
         } catch (cause) {
           if (cancelRequested.current) break
@@ -206,6 +212,24 @@ export function SpotifyImportModal({ onClose, musicFolderPath, isDesktop, onRefr
       if (downloaded > 0) {
         setDownloadStatus(`Scanning Music folder for ${downloaded} downloaded file(s)…`)
         await onRefreshLibrary()
+
+        // The file is already on disk; use the exact path returned by the native
+        // downloader to attach Spotify's title/artist to that real local track.
+        // This avoids depending on YouTube's filename being a perfect metadata match.
+        for (const item of downloadedFiles) {
+          const tracks = useMusicStore.getState().tracks
+          const localTrack = tracks.find((candidate) =>
+            candidate.filePath && normalizePath(candidate.filePath) === normalizePath(item.path),
+          )
+          if (!localTrack) continue
+          const updates: Partial<Track> = {
+            title: item.track.name,
+            artist: item.track.artists.join(', ') || localTrack.artist,
+            album: item.track.album || localTrack.album,
+          }
+          if (!localTrack.coverUrl && item.track.coverUrl) updates.coverUrl = item.track.coverUrl
+          useMusicStore.getState().updateTrack(localTrack.id, updates)
+        }
       }
 
       const matched = matchLocalTracks(preview.tracks, useMusicStore.getState().tracks)
