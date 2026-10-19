@@ -140,6 +140,7 @@ export function DownloadSection({
         } else {
           targets.push({ url: link, label: `Link ${index + 1}` })
         }
+      }
 
       if (cancelRequested.current) {
         setMessage({ type: 'info', text: 'Download cancelled before any files were downloaded.' })
@@ -191,7 +192,7 @@ export function DownloadSection({
         setUrl('')
         setMessage({
           type: 'success',
-          text: \`All \${savedPaths.length} audio file(s) downloaded and added to your library.\${includedSpotify ? ' Spotify track matches were downloaded from their media sources, not from Spotify itself.' : ''}\`,
+          text: \`All \${savedPaths.length} audio file(s) downloaded and added to your library.\`,
         })
       } else {
         setMessage({
