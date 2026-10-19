@@ -245,6 +245,7 @@ function App() {
         onOpenAddToPlaylist={setPlaylistToAddSongs}
         playlistName={newPlaylistName}
         setPlaylistName={setNewPlaylistName}
+        scanNotice={scanNotice}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
