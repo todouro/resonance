@@ -1473,9 +1473,9 @@ test('player bar hover preference uses the existing store and desktop JSON persi
 
   const store = fs.readFileSync(new URL('../src/store/useMusicStore.ts', import.meta.url), 'utf8')
   const database = fs.readFileSync(new URL('../src/utils/desktopDatabase.ts', import.meta.url), 'utf8')
-  assert.match(store, /playerBarHoverMode: state\\.playerBarHoverMode/)
-  assert.match(store, /playerBarHoverMode: persisted\\.playerBarHoverMode \\?\\? false/)
-  assert.match(database, /playerBarHoverMode: normalizeBoolean\\(raw\\.playerBarHoverMode, false\\)/)
+  assert.match(store, /playerBarHoverMode: state\.playerBarHoverMode/)
+  assert.match(store, /playerBarHoverMode: persisted\.playerBarHoverMode \?\? false/)
+  assert.match(database, /playerBarHoverMode: normalizeBoolean\(raw\.playerBarHoverMode, false\)/)
 
   useMusicStore.getState().setPlayerBarHoverMode(previous)
 })
