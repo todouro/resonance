@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Download, FolderOpen, LoaderCircle, Music2 } from 'lucide-react'
+import { ChevronDown, Download, FolderOpen, LoaderCircle, Music2 } from 'lucide-react'
 
 type AudioFormat = 'best' | 'mp3' | 'm4a' | 'opus' | 'flac' | 'wav'
 
@@ -220,6 +220,7 @@ export function DownloadSection({
                 <select id="download-format" value={format} onChange={(event) => setFormat(event.target.value as AudioFormat)} disabled={busy}>
                   {formats.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
+                <ChevronDown size={15} className="download-format-chevron" aria-hidden="true" />
               </div>
               <p className="download-format-description">{formats.find((option) => option.value === format)?.description}</p>
             </div>
