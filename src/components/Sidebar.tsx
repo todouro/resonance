@@ -1,17 +1,12 @@
-import { useRef } from 'react'
-import type { ChangeEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Download, ExternalLink } from 'lucide-react'
+import { Download, ExternalLink, Music2 } from 'lucide-react'
 import {
   AudioLinesFilled,
   CheckFilled,
   DiscFilled,
-  FolderImageFilled,
-  FolderMusicFilled,
   HeartFilled,
   PlaylistFilled,
   PlusFilled,
-  RefreshFilled,
   SettingsFilled,
 } from './icons'
 import { favoritesId, libraryId } from '../store/useMusicStore'
@@ -29,17 +24,6 @@ export type SidebarProps = {
   onRenamePlaylist: (playlist: Playlist) => void
   onDeletePlaylist: (playlist: Playlist) => void
   onOpenAddToPlaylist?: (playlist: Playlist) => void
-  onAddMusicFolder: (e: ChangeEvent<HTMLInputElement>) => void
-  onAddCoverFolder: (e: ChangeEvent<HTMLInputElement>) => void
-  isDesktop?: boolean
-  onNativeMusicFolder?: () => void
-  onNativeCoverFolder?: () => void
-  onRescanMusicFolder?: () => void
-  onRescanCoverFolder?: () => void
-  isScanningMusic?: boolean
-  isScanningCovers?: boolean
-  musicFolderName?: string
-  coverFolderName?: string
   scanNotice?: string | null
   onOpenSettings?: () => void
   isDownloadsActive?: boolean
@@ -57,57 +41,11 @@ export function Sidebar({
   onRenamePlaylist,
   onDeletePlaylist,
   onOpenAddToPlaylist,
-  onAddMusicFolder,
-  onAddCoverFolder,
-  isDesktop = false,
-  onNativeMusicFolder,
-  onNativeCoverFolder,
-  onRescanMusicFolder,
-  onRescanCoverFolder,
-  isScanningMusic = false,
-  isScanningCovers = false,
-  musicFolderName,
-  coverFolderName,
   scanNotice,
   onOpenSettings,
   isDownloadsActive = false,
   onOpenDownloads,
 }: SidebarProps) {
-  const musicInputRef = useRef<HTMLInputElement>(null)
-  const coverInputRef = useRef<HTMLInputElement>(null)
-
-  const handleMusicTriggerClick = () => {
-    if (isDesktop && onNativeMusicFolder) {
-      onNativeMusicFolder()
-    } else {
-      musicInputRef.current?.click()
-    }
-  }
-
-  const handleCoverTriggerClick = () => {
-    if (isDesktop && onNativeCoverFolder) {
-      onNativeCoverFolder()
-    } else {
-      coverInputRef.current?.click()
-    }
-  }
-
-  const handleRescanMusicClick = () => {
-    if (onRescanMusicFolder) {
-      onRescanMusicFolder()
-    } else {
-      handleMusicTriggerClick()
-    }
-  }
-
-  const handleRescanCoverClick = () => {
-    if (onRescanCoverFolder) {
-      onRescanCoverFolder()
-    } else {
-      handleCoverTriggerClick()
-    }
-  }
-
   return (
     <aside className="sidebar">
       <div className="brand">
