@@ -483,6 +483,9 @@ function App() {
           <SpotifyImportModal
             key="spotify-import-modal"
             onClose={() => setIsSpotifyImportOpen(false)}
+            musicFolderPath={configuredMusicFolderPath}
+            isDesktop={isDesktop}
+            onRefreshLibrary={handleRescanMusicFolder}
           />
         )}
       </AnimatePresence>
