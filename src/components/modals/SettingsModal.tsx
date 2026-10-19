@@ -294,11 +294,22 @@ export function SettingsModal({
       card.style.removeProperty('transition')
     }
     const content = card.querySelector('.settings-tab-content') as HTMLElement | null
+    const footer = card.querySelector('.settings-modal-footer') as HTMLElement | null
     const getTargetHeight = () => {
-      const borderAndScrollbar = Math.max(0, card.offsetHeight - card.clientHeight)
-      const contentHeight = content?.scrollHeight ?? card.scrollHeight
-      const chromeHeight = content ? card.scrollHeight - content.clientHeight : 0
-      return Math.min(chromeHeight + contentHeight + borderAndScrollbar, Math.floor(window.innerHeight * 0.9))
+      if (!content || !footer) {
+        const borderAndScrollbar = Math.max(0, card.offsetHeight - card.clientHeight)
+        return Math.min(card.scrollHeight + borderAndScrollbar, Math.floor(window.innerHeight * 0.9))
+      }
+      const cardRect = card.getBoundingClientRect()
+      const contentRect = content.getBoundingClientRect()
+      const footerRect = footer.getBoundingClientRect()
+      const styles = getComputedStyle(card)
+      const leadingChrome = contentRect.top - cardRect.top + card.scrollTop
+      const trailingChrome =
+        footerRect.bottom - contentRect.bottom +
+        (Number.parseFloat(styles.paddingBottom) || 0) +
+        (Number.parseFloat(styles.borderBottomWidth) || 0)
+      return Math.min(Math.ceil(leadingChrome + content.scrollHeight + trailingChrome), Math.floor(window.innerHeight * 0.9))
     }
     const updateTargetHeight = () => {
       if (finished) return
