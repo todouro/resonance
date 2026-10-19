@@ -254,7 +254,7 @@ export function SettingsModal({
   const autoHideSidebar = useMusicStore((state) => state.autoHideSidebar)
   const setAutoHideSidebar = useMusicStore((state) => state.setAutoHideSidebar)
   const [activeTab, setActiveTab] = useState<SettingsTab>('Shortcuts')
-  const prefersReducedMotion = useReducedMotion() ?? false
+  const prefersReducedMotion = useReducedMotion() ?? (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   const modalCardRef = useRef<HTMLDivElement>(null)
   const heightAnimationCleanupRef = useRef<(() => void) | null>(null)
   const previousTabRef = useRef<SettingsTab>(activeTab)
@@ -293,9 +293,12 @@ export function SettingsModal({
       card.style.height = 'auto'
       card.style.removeProperty('transition')
     }
+    const content = card.querySelector('.settings-tab-content') as HTMLElement | null
     const getTargetHeight = () => {
       const borderAndScrollbar = Math.max(0, card.offsetHeight - card.clientHeight)
-      return Math.min(card.scrollHeight + borderAndScrollbar, Math.floor(window.innerHeight * 0.9))
+      const contentHeight = content?.scrollHeight ?? card.scrollHeight
+      const chromeHeight = content ? card.scrollHeight - content.clientHeight : 0
+      return Math.min(chromeHeight + contentHeight + borderAndScrollbar, Math.floor(window.innerHeight * 0.9))
     }
     const updateTargetHeight = () => {
       if (finished) return
