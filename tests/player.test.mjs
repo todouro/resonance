@@ -1461,3 +1461,22 @@ test('playlist actions are accessible from the playlist-name menu, not duplicate
   assert.match(sidebar, /<PlaylistActionMenu[\s\S]*?onAddToPlaylist=\{onOpenAddToPlaylist\}/)
   assert.doesNotMatch(app, /className="library-tool-add-btn"/)
 })
+
+test('Spotify playlist imports download actual audio before creating a playable-only playlist', () => {
+  const modal = fs.readFileSync(
+    new URL('../src/components/modals/SpotifyImportModal.tsx', import.meta.url),
+    'utf8',
+  )
+  const native = fs.readFileSync(
+    new URL('../src-tauri/src/lib.rs', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(modal, /invoke<string>\('download_spotify_track'/)
+  assert.match(modal, /await onRefreshLibrary\(\)/)
+  assert.match(modal, /importSpotifyPublicPlaylist\(\{[\s\S]*?trackIds: matched\.ids,[\s\S]*?\}, \[\]\)/)
+  assert.doesNotMatch(modal, /unavailable:\s*true/)
+  assert.match(native, /fn find_spotify_audio_url/)
+  assert.match(native, /score_spotify_audio_candidate/)
+  assert.match(native, /generate_handler!\[[\s\S]*?download_spotify_track/)
+})
