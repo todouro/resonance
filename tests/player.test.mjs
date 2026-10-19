@@ -1555,3 +1555,53 @@ test('Settings navigation glides a rounded active indicator and animates measure
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.settings-tab\s*\{ transition: none; \}\s*\}/)
   assert.doesNotMatch(css, /\.settings-tab-indicator\s*\{[^}]*border-radius:\s*999px;/)
 })
+
+test('Settings tab indicator converts transformed viewport measurements back to layout coordinates', () => {
+  const settings = fs.readFileSync(new URL('../src/components/modals/SettingsModal.tsx', import.meta.url), 'utf8')
+
+  // The Settings card starts at scale 0.94 and animates to 1.0. getBoundingClientRect()
+  // reports scaled screen coordinates, so measurements must be normalized before they
+  // are stored for the indicator whose CSS transform uses unscaled layout pixels.
+  assert.match(settings, /const navStyle = getComputedStyle\(nav\)/)
+  assert.match(settings, /const scaleX = navRect\.width > 0 \? layoutWidth \/ navRect\.width : 1/)
+  assert.match(settings, /const scaleY = navRect\.height > 0 \? layoutHeight \/ navRect\.height : 1/)
+  assert.match(settings, /left: \(rect\.left - navRect\.left\) \* scaleX - nav\.clientLeft/)
+  assert.match(settings, /top: \(rect\.top - navRect\.top\) \* scaleY - nav\.clientTop/)
+  assert.match(settings, /width: rect\.width \* scaleX/)
+  assert.match(settings, /height: rect\.height \* scaleY/)
+
+  // All three tabs must recover their exact layout bounds after the modal scale-in
+  // animation. The second layout represents different tab bounds after a window resize.
+  const layouts = [
+    [
+      { label: 'Shortcuts', left: 6, top: 6, width: 224.5, height: 38 },
+      { label: 'Folders', left: 236.5, top: 6, width: 224.5, height: 38 },
+      { label: 'Appearance', left: 467, top: 6, width: 224.5, height: 38 },
+    ],
+    [
+      { label: 'Shortcuts', left: 6, top: 6, width: 178.25, height: 38 },
+      { label: 'Folders', left: 190.25, top: 6, width: 178.25, height: 38 },
+      { label: 'Appearance', left: 374.5, top: 6, width: 178.25, height: 38 },
+    ],
+  ]
+  for (const scale of [0.94, 1, 1.08]) {
+    for (const layout of layouts) {
+      for (const tab of layout) {
+        const viewportLeft = 37 + (tab.left + 1) * scale
+        const viewportTop = 19 + (tab.top + 1) * scale
+        const viewportWidth = tab.width * scale
+        const viewportHeight = tab.height * scale
+        const normalizedLeft = (viewportLeft - 37) / scale - 1
+        const normalizedTop = (viewportTop - 19) / scale - 1
+        const normalizedWidth = viewportWidth / scale
+        const normalizedHeight = viewportHeight / scale
+
+        assert.ok(Math.abs(normalizedLeft - tab.left) < 1e-9, tab.label + ' left')
+        assert.ok(Math.abs(normalizedTop - tab.top) < 1e-9, tab.label + ' top')
+        assert.ok(Math.abs(normalizedWidth - tab.width) < 1e-9, tab.label + ' width')
+        assert.ok(Math.abs(normalizedHeight - tab.height) < 1e-9, tab.label + ' height')
+      }
+    }
+  }
+})
+
