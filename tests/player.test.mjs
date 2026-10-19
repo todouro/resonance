@@ -1466,11 +1466,17 @@ test('playlist actions are accessible from the playlist-name menu, not duplicate
 })
 
 
-test('player bar hover preference persists through the existing Zustand settings storage', () => {
+test('player bar hover preference uses the existing store and desktop JSON persistence paths', () => {
   const previous = useMusicStore.getState().playerBarHoverMode
   useMusicStore.getState().setPlayerBarHoverMode(true)
-  const saved = JSON.parse(localStorage.getItem('resonance-playlists-v1') ?? '{}')
-  assert.equal(saved.state?.playerBarHoverMode, true)
+  assert.equal(useMusicStore.getState().playerBarHoverMode, true)
+
+  const store = fs.readFileSync(new URL('../src/store/useMusicStore.ts', import.meta.url), 'utf8')
+  const database = fs.readFileSync(new URL('../src/utils/desktopDatabase.ts', import.meta.url), 'utf8')
+  assert.match(store, /playerBarHoverMode: state\\.playerBarHoverMode/)
+  assert.match(store, /playerBarHoverMode: persisted\\.playerBarHoverMode \\?\\? false/)
+  assert.match(database, /playerBarHoverMode: normalizeBoolean\\(raw\\.playerBarHoverMode, false\\)/)
+
   useMusicStore.getState().setPlayerBarHoverMode(previous)
 })
 
