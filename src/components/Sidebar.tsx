@@ -1,6 +1,5 @@
 import { Download } from 'lucide-react'
 import {
-  AudioLinesFilled,
   DiscFilled,
   HeartFilled,
   PlaylistFilled,
@@ -52,7 +51,7 @@ export function Sidebar({
     <aside className="sidebar" onMouseEnter={autoHideEnabled ? onAutoHideEnter : undefined} onMouseLeave={autoHideEnabled ? onAutoHideLeave : undefined}>
       <div className="brand">
         <div className="brand-mark">
-          <AudioLinesFilled size={22} />
+          <img className="brand-logo" src="/resonance-logo.png" alt="" />
         </div>
         <div>
           <strong>Resonance</strong>
