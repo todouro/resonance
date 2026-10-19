@@ -292,10 +292,12 @@ export function SpotifyImportModal({ onClose, musicFolderPath, isDesktop, onRefr
               {busy ? <><LoaderCircle size={16} className="spinning" /> Working…</> : <><Music2 size={17} /> Fetch tracks</>}
             </button>
             {preview && (
-              <button type="button" className="spotify-secondary-button" disabled={busy || !isDesktop || !musicFolderPath} onClick={() => void handleImport()}>
-                {busy ? <><LoaderCircle size={15} className="spinning" /> Downloading…</> : 'Download tracks & create playlist'}
-              </button>
-              {busy && <button type="button" className="spotify-secondary-button" onClick={() => void handleCancel()}>Cancel</button>}
+              <>
+                <button type="button" className="spotify-secondary-button" disabled={busy || !isDesktop || !musicFolderPath} onClick={() => void handleImport()}>
+                  {busy ? <><LoaderCircle size={15} className="spinning" /> Downloading…</> : 'Download tracks & create playlist'}
+                </button>
+                {busy && <button type="button" className="spotify-secondary-button" onClick={() => void handleCancel()}>Cancel</button>}
+              </>
             )}
           </div>
 
