@@ -341,6 +341,222 @@ async fn download_audio(
         .map_err(|error| format!("The download task stopped unexpectedly: {error}"))?
 }
 
+
+fn normalized_match_words(value: &str) -> Vec<String> {
+    let normalized = value
+        .chars()
+        .flat_map(|character| character.to_lowercase())
+        .map(|character| if character.is_alphanumeric() { character } else { ' ' })
+        .collect::<String>();
+    normalized.split_whitespace().map(str::to_string).collect()
+}
+
+fn word_overlap_ratio(wanted: &str, candidate: &str) -> f64 {
+    let wanted_words: Vec<String> = normalized_match_words(wanted)
+        .into_iter()
+        .filter(|word| word.chars().count() > 2)
+        .collect();
+    if wanted_words.is_empty() {
+        return 0.0;
+    }
+    let candidate_words = normalized_match_words(candidate);
+    let overlap = wanted_words
+        .iter()
+        .filter(|word| candidate_words.contains(word))
+        .count();
+    overlap as f64 / wanted_words.len() as f64
+}
+
+fn supported_youtube_url(candidate: &Value) -> Option<String> {
+    let raw_url = candidate
+        .get("webpage_url")
+        .or_else(|| candidate.get("webpageUrl"))
+        .or_else(|| candidate.get("original_url"))
+        .or_else(|| candidate.get("url"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let accepted = |url: &str| {
+        url.starts_with("https://www.youtube.com/watch?")
+            || url.starts_with("https://youtube.com/watch?")
+            || url.starts_with("https://music.youtube.com/watch?")
+            || url.starts_with("https://m.youtube.com/watch?")
+            || url.starts_with("https://youtu.be/")
+    };
+    if accepted(raw_url) {
+        return Some(raw_url.to_string());
+    }
+
+    let id = candidate.get("id").and_then(Value::as_str).unwrap_or("");
+    let extractor = candidate
+        .get("extractor_key")
+        .or_else(|| candidate.get("extractor"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !id.is_empty()
+        && id.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
+        && (extractor.contains("youtube") || raw_url.is_empty() || !raw_url.starts_with("http"))
+    {
+        return Some(format!("https://www.youtube.com/watch?v={id}"));
+    }
+    None
+}
+
+fn score_spotify_audio_candidate(title: &str, artist: &str, candidate: &Value) -> Option<(i32, String)> {
+    let candidate_title = candidate.get("title").or_else(|| candidate.get("fulltitle"))?.as_str()?.trim();
+    let uploader = candidate
+        .get("uploader")
+        .or_else(|| candidate.get("channel"))
+        .or_else(|| candidate.get("creator"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let combined = format!("{candidate_title} {uploader}");
+    let wanted = format!("{title} {artist}");
+    let title_ratio = word_overlap_ratio(title, candidate_title);
+    let artist_ratio = if artist.trim().is_empty() {
+        1.0
+    } else {
+        word_overlap_ratio(artist, &combined)
+    };
+
+    // Reject covers, edits, sped/slowed variants and other common false matches.
+    let normalized_wanted = normalized_match_words(&wanted).join(" ");
+    let normalized_candidate = normalized_match_words(&combined).join(" ");
+    for rejected in [
+        "slowed", "sped up", "speed up", "nightcore", "remix", "mashup",
+        "live", "concert", "karaoke", "instrumental", "cover", "reaction",
+        "shorts", "bass boosted", "8d audio",
+    ] {
+        if normalized_candidate.contains(rejected) && !normalized_wanted.contains(rejected) {
+            return None;
+        }
+    }
+
+    // Do not silently download an unrelated first search result. Both title and
+    // artist need a strong textual match; unavailable duration metadata is common
+    // on search results and therefore isn't treated as proof of a match.
+    if title_ratio < 0.75 || (!artist.trim().is_empty() && artist_ratio < 0.65) {
+        return None;
+    }
+
+    let candidate_url = supported_youtube_url(candidate)?;
+    let official_hint = if normalized_candidate.contains("official audio")
+        || normalized_candidate.contains("topic")
+        || normalized_candidate.contains("official music")
+    {
+        8
+    } else {
+        0
+    };
+    let score = (title_ratio * 65.0).round() as i32
+        + (artist_ratio * 35.0).round() as i32
+        + official_hint;
+    Some((score, candidate_url))
+}
+
+fn find_spotify_audio_url(app: &tauri::AppHandle, title: &str, artist: &str) -> Result<String, String> {
+    let title = title.trim();
+    let artist = artist.trim();
+    if title.is_empty() {
+        return Err("Spotify did not provide a track title.".into());
+    }
+
+    let executable = yt_dlp_executable(app)?;
+    let queries = if artist.is_empty() {
+        vec![format!("{title} official audio"), format!("{title} audio")]
+    } else {
+        vec![
+            format!("{artist} - {title} official audio"),
+            format!("{artist} {title} audio"),
+        ]
+    };
+
+    let mut best: Option<(i32, String)> = None;
+    let mut last_error = String::new();
+    for query in queries {
+        let search_url = format!("ytsearch8:{query}");
+        let output = new_command(&executable)
+            .arg("--dump-json")
+            .arg("--flat-playlist")
+            .arg("--no-warnings")
+            .arg("--no-colors")
+            .arg("--ignore-errors")
+            .arg("--socket-timeout")
+            .arg("30")
+            .arg("--")
+            .arg(&search_url)
+            .output()
+            .map_err(|error| format!("Could not start audio source search: {error}"))?;
+
+        if !output.status.success() {
+            last_error = last_line(&output.stderr, "Audio source search failed.");
+            continue;
+        }
+
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let Ok(candidate) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+            if let Some(scored) = score_spotify_audio_candidate(title, artist, &candidate) {
+                if best.as_ref().map(|current| scored.0 > current.0).unwrap_or(true) {
+                    best = Some(scored);
+                }
+            }
+        }
+        // Prefer a confident match from the first targeted query; the second
+        // query is a fallback for channels whose titles omit "official audio".
+        if best.as_ref().map(|match_result| match_result.0 >= 100).unwrap_or(false) {
+            break;
+        }
+    }
+
+    best.map(|(_, url)| url).ok_or_else(|| {
+        if last_error.is_empty() {
+            format!("Couldn't find a confident audio match for “{}” by “{}”. Try another track or a direct media URL.", title, artist)
+        } else {
+            format!("Couldn't find a confident audio match for “{}” by “{}”: {}", title, artist, last_error)
+        }
+    })
+}
+
+#[tauri::command]
+async fn download_spotify_track(
+    app: tauri::AppHandle,
+    title: String,
+    artist: String,
+    output_dir: String,
+    format: String,
+) -> Result<String, String> {
+    let title = title.trim().to_string();
+    let artist = artist.trim().to_string();
+    if title.is_empty() || title.chars().count() > 300 || artist.chars().count() > 300 {
+        return Err("Spotify track details are missing or too long.".into());
+    }
+
+    let output_path = PathBuf::from(&output_dir);
+    if !output_path.is_dir() {
+        return Err("Your selected Music folder is unavailable. Choose the folder again in Resonance.".into());
+    }
+    if !app.fs_scope().is_allowed(&output_path) {
+        return Err("Resonance doesn't have access to that folder. Choose your Music folder again.".into());
+    }
+    let allowed_formats = ["best", "mp3", "m4a", "opus", "flac", "wav"];
+    if !allowed_formats.contains(&format.as_str()) {
+        return Err("That audio format is not supported.".into());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        emit_progress(&app, "preparing", &format!("Finding an audio match for “{title}”…"), None);
+        let source_url = find_spotify_audio_url(&app, &title, &artist)?;
+        emit_progress(&app, "preparing", &format!("Downloading matched audio for “{title}”…"), None);
+        run_download(app, source_url, output_path, format)
+    })
+    .await
+    .map_err(|error| format!("The Spotify download task stopped unexpectedly: {error}"))?
+}
+
 /// Stops the download that is currently running (including ffmpeg and other child processes).
 #[tauri::command]
 async fn cancel_download() -> bool {
@@ -705,7 +921,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_persisted_scope::init())
-        .invoke_handler(tauri::generate_handler![download_audio, inspect_media_url, cancel_download, fetch_spotify_public_link])
+        .invoke_handler(tauri::generate_handler![download_audio, download_spotify_track, inspect_media_url, cancel_download, fetch_spotify_public_link])
         .run(tauri::generate_context!())
         .expect("error while running Resonance native music player");
 }
