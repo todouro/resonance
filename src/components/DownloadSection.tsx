@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Download, FolderOpen, LoaderCircle, Music2 } from 'lucide-react'
 import { fetchPublicSpotifyLink } from '../services/spotify'
-import type { SpotifyTrackSummary } from '../services/spotify'
 
 type AudioFormat = 'best' | 'mp3' | 'm4a' | 'opus' | 'flac' | 'wav'
 
@@ -15,7 +14,7 @@ type DownloadSectionProps = {
   onOpenSpotify: () => void
 }
 
-type DownloadTarget = { url: string; label: string; isSpotifyMatch: boolean }
+type DownloadTarget = { url: string; label: string }
 
 type DownloadProgress = {
   stage: 'preparing' | 'downloading'
@@ -35,14 +34,6 @@ function isSpotifyPublicLink(value: string): boolean {
   } catch {
     return false
   }
-}
-
-function toSpotifySearchUrl(track: SpotifyTrackSummary): string {
-  const title = track.name.trim()
-  const artist = track.artists.filter(Boolean).join(' ').trim()
-  const query = [artist, title].filter(Boolean).join(' - ')
-  if (!query) throw new Error('Spotify returned a track without a title or artist.')
-  return \`ytsearch1:\${query}\`
 }
 
 function describeProgress(progress: DownloadProgress | null, index: number, total: number) {
@@ -139,40 +130,16 @@ export function DownloadSection({
     const savedPaths: string[] = []
     const failures: string[] = []
     const targets: DownloadTarget[] = []
-    let includedSpotify = false
 
     try {
       for (let index = 0; index < links.length; index += 1) {
         if (cancelRequested.current) break
         const link = links[index]
         if (isSpotifyPublicLink(link)) {
-          includedSpotify = true
-          setMessage({
-            type: 'info',
-            text: \`Reading public Spotify track metadata (\${index + 1} of \${links.length})…\`,
-          })
-          const result = await fetchPublicSpotifyLink(link)
-          if (!result.tracks.length) {
-            throw new Error(\`Spotify link \${index + 1} did not expose any tracks. Try a public track, album, or playlist link.\`)
-          }
-          if (result.tracks.length > 20 && !window.confirm(
-            \`This Spotify link contains \${result.tracks.length} tracks. Resonance will search for a matching audio source for each track. Download all \${result.tracks.length} tracks?\`,
-          )) {
-            setMessage({ type: 'info', text: 'Spotify download cancelled before any files were downloaded.' })
-            return
-          }
-          for (const track of result.tracks) {
-            const label = [track.artists.join(', '), track.name].filter(Boolean).join(' — ')
-            targets.push({
-              url: toSpotifySearchUrl(track),
-              label: label || track.name,
-              isSpotifyMatch: true,
-            })
-          }
+          throw new Error('Spotify links provide track metadata, not downloadable audio. Open Spotify tools to inspect the link, then paste a direct audio/media URL you have permission to download.')
         } else {
-          targets.push({ url: link, label: \`Link \${index + 1}\`, isSpotifyMatch: false })
+          targets.push({ url: link, label: `Link ${index + 1}` })
         }
-      }
 
       if (cancelRequested.current) {
         setMessage({ type: 'info', text: 'Download cancelled before any files were downloaded.' })
