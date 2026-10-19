@@ -3,7 +3,14 @@
 :root {
   color: #f7f3ea;
   background: #080909;
-  font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-ui: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-size-field: 15px;
+  --font-size-control: 13px;
+  --font-size-caption: 12px;
+  --radius-control: 12px;
+  --radius-control-compact: 10px;
+  --focus-ring: rgba(255, 255, 255, 0.055);
+  font-family: var(--font-ui);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
