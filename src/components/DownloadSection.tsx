@@ -3,7 +3,6 @@ import { listen } from '@tauri-apps/api/event'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Download, FolderOpen, LoaderCircle, Music2 } from 'lucide-react'
-import { fetchPublicSpotifyLink } from '../services/spotify'
 
 type AudioFormat = 'best' | 'mp3' | 'm4a' | 'opus' | 'flac' | 'wav'
 
@@ -108,7 +107,7 @@ export function DownloadSection({
     }
     const invalid = links.find((link) => !/^https?:\/\//i.test(link))
     if (invalid) {
-      setMessage({ type: 'error', text: \`This doesn't look like a valid URL: \${invalid}\` })
+      setMessage({ type: 'error', text: `This doesn't look like a valid URL: ${invalid}` })
       return
     }
     if (!isDesktop) {
@@ -158,7 +157,7 @@ export function DownloadSection({
         setProgress(null)
         setMessage({
           type: 'info',
-          text: \`Downloading \${index + 1} of \${targets.length}: \${target.label}…\`,
+          text: `Downloading ${index + 1} of ${targets.length}: ${target.label}…`,
         })
         try {
           const savedPath = await invoke<string>('download_audio', {
@@ -171,7 +170,7 @@ export function DownloadSection({
         } catch (error) {
           if (cancelRequested.current) break
           const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : 'Download failed.'
-          failures.push(\`\${target.label}: \${detail}\`)
+          failures.push(`${target.label}: ${detail}`)
         }
       }
 
@@ -186,18 +185,18 @@ export function DownloadSection({
       if (cancelRequested.current) {
         setMessage({
           type: 'info',
-          text: \`Download cancelled. \${savedPaths.length} of \${targets.length} audio file(s) downloaded.\`,
+          text: `Download cancelled. ${savedPaths.length} of ${targets.length} audio file(s) downloaded.`,
         })
       } else if (failures.length === 0) {
         setUrl('')
         setMessage({
           type: 'success',
-          text: \`All \${savedPaths.length} audio file(s) downloaded and added to your library.\`,
+          text: `All ${savedPaths.length} audio file(s) downloaded and added to your library.`,
         })
       } else {
         setMessage({
           type: 'error',
-          text: \`\${savedPaths.length} of \${targets.length} audio file(s) downloaded. \${failures.slice(0, 4).join(' · ')}\${failures.length > 4 ? \` · and \${failures.length - 4} more failure(s)\` : ''}\`,
+          text: `${savedPaths.length} of ${targets.length} audio file(s) downloaded. ${failures.slice(0, 4).join(' · ')}${failures.length > 4 ? ` · and ${failures.length - 4} more failure(s)` : ''}`,
         })
       }
     } catch (error) {
