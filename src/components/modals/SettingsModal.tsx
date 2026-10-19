@@ -89,16 +89,40 @@ function SettingsTabNavigation({
 
     const measure = (snap: boolean) => {
       const navRect = nav.getBoundingClientRect()
-      const originLeft = navRect.left + nav.clientLeft
-      const originTop = navRect.top + nav.clientTop
+      const navStyle = getComputedStyle(nav)
+      const pixels = (value: string) => Number.parseFloat(value)
+      const horizontalExtras =
+        pixels(navStyle.paddingLeft) +
+        pixels(navStyle.paddingRight) +
+        pixels(navStyle.borderLeftWidth) +
+        pixels(navStyle.borderRightWidth)
+      const verticalExtras =
+        pixels(navStyle.paddingTop) +
+        pixels(navStyle.paddingBottom) +
+        pixels(navStyle.borderTopWidth) +
+        pixels(navStyle.borderBottomWidth)
+      const computedWidth = pixels(navStyle.width)
+      const computedHeight = pixels(navStyle.height)
+      const layoutWidth = Number.isFinite(computedWidth)
+        ? computedWidth + (navStyle.boxSizing === 'border-box' ? 0 : horizontalExtras)
+        : nav.offsetWidth
+      const layoutHeight = Number.isFinite(computedHeight)
+        ? computedHeight + (navStyle.boxSizing === 'border-box' ? 0 : verticalExtras)
+        : nav.offsetHeight
+
+      // getBoundingClientRect() includes ancestor transforms (notably the Settings
+      // card's scale-in animation). Convert its viewport-space measurements back
+      // to CSS layout pixels before storing positions for the unscaled indicator.
+      const scaleX = navRect.width > 0 ? layoutWidth / navRect.width : 1
+      const scaleY = navRect.height > 0 ? layoutHeight / navRect.height : 1
       state.rects = tabRefs.current.map((element) => {
         if (!element) return null
         const rect = element.getBoundingClientRect()
         return {
-          left: rect.left - originLeft,
-          top: rect.top - originTop,
-          width: rect.width,
-          height: rect.height,
+          left: (rect.left - navRect.left) * scaleX - nav.clientLeft,
+          top: (rect.top - navRect.top) * scaleY - nav.clientTop,
+          width: rect.width * scaleX,
+          height: rect.height * scaleY,
         }
       })
 
