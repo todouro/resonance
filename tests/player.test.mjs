@@ -1529,3 +1529,29 @@ test('docked player bar stays square and above the auto-hide panel with an acryl
   assert.match(css, /\.app-shell\.auto-hide-sidebar\.sidebar-revealed > \.sidebar\s*\{\s*transform:\s*translateX\(0\);\s*\}/)
   assert.match(css, /transition: transform \.22s cubic-bezier\(\.22,1,\.36,1\), box-shadow \.22s ease;/)
 })
+
+
+test('Settings navigation glides a rounded active indicator and animates measured height changes', () => {
+  const settings = fs.readFileSync(new URL('../src/components/modals/SettingsModal.tsx', import.meta.url), 'utf8')
+  const css = fs.readFileSync(new URL('../src/App.css', import.meta.url), 'utf8')
+
+  assert.match(settings, /const SETTINGS_TABS = \['Shortcuts', 'Folders', 'Appearance'\] as const/)
+  assert.match(settings, /aria-pressed=\{activeTab === tab\}/)
+  assert.match(settings, /onClick=\{\(\) => onChange\(tab\)\}/)
+  assert.match(settings, /state\.v0 \+= \(-k0 \* \(state\.x0 - target0\)/)
+  assert.match(settings, /state\.v1 \+= \(-k1 \* \(state\.x1 - target1\)/)
+  assert.match(settings, /ink\.style\.clipPath = 'inset\('/)
+  assert.match(settings, /new ResizeObserver\(handleResize\)/)
+  assert.match(settings, /useReducedMotion/)
+  assert.match(settings, /content\.scrollHeight/)
+  assert.match(settings, /card\.style\.height = 'auto'/)
+  assert.match(settings, /height 380ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/)
+  assert.match(settings, /SettingsTabNavigation activeTab=\{activeTab\} onChange=\{changeTab\}/)
+
+  assert.match(css, /--settings-tab-radius:\s*9px;/)
+  assert.match(css, /\.settings-tab-indicator\s*\{[\s\S]*?border-radius:\s*var\(--settings-tab-radius\);/)
+  assert.match(css, /\.settings-tabs-ink\s*\{[\s\S]*?clip-path:\s*inset\(0 100% 0 0\);/)
+  assert.match(css, /\.settings-tab\.active\s*\{[^}]*color:\s*transparent;[^}]*background:\s*transparent;/)
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.settings-tab\s*\{ transition: none; \}\s*\}/)
+  assert.doesNotMatch(css, /\.settings-tab-indicator\s*\{[^}]*border-radius:\s*999px;/)
+})
