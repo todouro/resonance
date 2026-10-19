@@ -1543,7 +1543,7 @@ test('Settings navigation glides a rounded active indicator and animates measure
   assert.match(settings, /ink\.style\.clipPath = 'inset\('/)
   assert.match(settings, /new ResizeObserver\(handleResize\)/)
   assert.match(settings, /useReducedMotion/)
-  assert.match(settings, /card\.scrollHeight/)
+  assert.match(settings, /content\?\.scrollHeight/)
   assert.match(settings, /card\.style\.height = 'auto'/)
   assert.match(settings, /height 380ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/)
   assert.match(settings, /SettingsTabNavigation activeTab=\{activeTab\} onChange=\{changeTab\}/)
