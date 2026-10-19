@@ -2,12 +2,22 @@ import { useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { CloseFilled, SettingsFilled } from '../icons'
 import { useMusicStore } from '../../store/useMusicStore'
+import { FolderImageFilled, FolderMusicFilled, RefreshFilled } from '../icons'
 
 export type SettingsModalProps = {
   onClose: () => void
+  musicFolderName?: string
+  coverFolderName?: string
+  isDesktop?: boolean
+  isScanningMusic?: boolean
+  isScanningCovers?: boolean
+  onChooseMusicFolder: () => void
+  onChooseCoverFolder: () => void
+  onRescanMusicFolder: () => void
+  onRescanCoverFolder: () => void
 }
 
-export function SettingsModal({ onClose }: SettingsModalProps) {
+export function SettingsModal({ onClose, musicFolderName, coverFolderName, isDesktop = false, isScanningMusic = false, isScanningCovers = false, onChooseMusicFolder, onChooseCoverFolder, onRescanMusicFolder, onRescanCoverFolder }: SettingsModalProps) {
   const tracks = useMusicStore((state) => state.tracks)
   const playlists = useMusicStore((state) => state.playlists)
 
@@ -46,7 +56,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             </div>
             <div>
               <h3 id="settings-modal-title">Settings</h3>
-              <p className="settings-modal-subtitle">Keyboard shortcuts and library information</p>
+              <p className="settings-modal-subtitle">Library folders, keyboard shortcuts, and library information</p>
             </div>
           </div>
           <button
@@ -61,6 +71,25 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         </header>
 
         <div className="settings-panel shortcuts-panel">
+          <div className="settings-section-header">
+            <span className="settings-eyebrow">Library folders</span>
+            <p className="settings-section-desc">Choose where Resonance reads music and cover artwork. Rescan after adding files.</p>
+          </div>
+          <div className="settings-folder-list">
+            <div className="settings-folder-row">
+              <FolderMusicFilled size={19} />
+              <div className="settings-folder-copy"><strong>Music folder</strong><span title={musicFolderName || 'No folder selected'}>{musicFolderName || 'No folder selected'}</span></div>
+              <button type="button" className="settings-folder-action" onClick={onChooseMusicFolder}>{musicFolderName ? 'Change' : 'Choose'}</button>
+              <button type="button" className="settings-folder-rescan" onClick={onRescanMusicFolder} disabled={!musicFolderName || isScanningMusic} title="Rescan music folder" aria-label="Rescan music folder"><RefreshFilled size={15} className={isScanningMusic ? 'spinning' : ''} /></button>
+            </div>
+            <div className="settings-folder-row">
+              <FolderImageFilled size={19} />
+              <div className="settings-folder-copy"><strong>Cover folder</strong><span title={coverFolderName || 'No folder selected'}>{coverFolderName || 'No folder selected'}</span></div>
+              <button type="button" className="settings-folder-action" onClick={onChooseCoverFolder}>{coverFolderName ? 'Change' : 'Choose'}</button>
+              <button type="button" className="settings-folder-rescan" onClick={onRescanCoverFolder} disabled={!coverFolderName || isScanningCovers} title="Rescan cover folder" aria-label="Rescan cover folder"><RefreshFilled size={15} className={isScanningCovers ? 'spinning' : ''} /></button>
+            </div>
+            {!isDesktop && <p className="settings-section-desc">Folder selection is available in the Windows desktop app.</p>}
+          </div>
           <div className="settings-section-header">
             <span className="settings-eyebrow">Keyboard Shortcuts</span>
             <p className="settings-section-desc">Quick key controls for seamless playback without reaching for the mouse.</p>
