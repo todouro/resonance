@@ -3,15 +3,18 @@ import { listen } from '@tauri-apps/api/event'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Download, FolderOpen, LoaderCircle, Music2 } from 'lucide-react'
+import { fetchPublicSpotifyLink } from '../services/spotify'
+import type { SpotifyTrackSummary } from '../services/spotify'
 
 type AudioFormat = 'best' | 'mp3' | 'm4a' | 'opus' | 'flac' | 'wav'
 
 type DownloadSectionProps = {
   musicFolderPath?: string
   isDesktop: boolean
-  onChooseMusicFolder: () => void
   onRefreshLibrary: () => Promise<unknown> | unknown
 }
+
+type DownloadTarget = { url: string; label: string; isSpotifyMatch: boolean }
 
 type DownloadProgress = {
   stage: 'preparing' | 'downloading'
@@ -19,6 +22,26 @@ type DownloadProgress = {
   speed: string
   eta: string
   message: string
+}
+
+function isSpotifyPublicLink(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    return (
+      (parsed.hostname === 'open.spotify.com' || parsed.hostname === 'www.open.spotify.com') &&
+      /^\/(track|album|playlist)\//.test(parsed.pathname)
+    )
+  } catch {
+    return false
+  }
+}
+
+function toSpotifySearchUrl(track: SpotifyTrackSummary): string {
+  const title = track.name.trim()
+  const artist = track.artists.filter(Boolean).join(' ').trim()
+  const query = [artist, title].filter(Boolean).join(' - ')
+  if (!query) throw new Error('Spotify returned a track without a title or artist.')
+  return \`ytsearch1:\${query}\`
 }
 
 function describeProgress(progress: DownloadProgress | null, index: number, total: number) {
@@ -43,7 +66,6 @@ const formats: { value: AudioFormat; label: string; description: string }[] = [
 export function DownloadSection({
   musicFolderPath,
   isDesktop,
-  onChooseMusicFolder,
   onRefreshLibrary,
 }: DownloadSectionProps) {
   const [url, setUrl] = useState('')
@@ -86,15 +108,14 @@ export function DownloadSection({
 
   const handleDownload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    // Accept one URL per line, or URLs separated by whitespace.
     const links = url.split(/\s+/).map((item) => item.trim()).filter(Boolean)
     if (!links.length) {
-      setMessage({ type: 'error', text: 'Paste one or more media URLs first.' })
+      setMessage({ type: 'error', text: 'Paste one or more media or Spotify links first.' })
       return
     }
     const invalid = links.find((link) => !/^https?:\/\//i.test(link))
     if (invalid) {
-      setMessage({ type: 'error', text: `This doesn't look like a valid URL: ${invalid}` })
+      setMessage({ type: 'error', text: \`This doesn't look like a valid URL: \${invalid}\` })
       return
     }
     if (!isDesktop) {
@@ -102,7 +123,7 @@ export function DownloadSection({
       return
     }
     if (!musicFolderPath) {
-      setMessage({ type: 'error', text: 'Choose your Music folder first. Downloads are saved there.' })
+      setMessage({ type: 'error', text: 'Choose your Music folder in Settings first. Downloads are saved there.' })
       return
     }
 
@@ -110,20 +131,68 @@ export function DownloadSection({
     setCancelling(false)
     setBusy(true)
     setDownloadedPaths([])
+    setProgress(null)
+    setQueue({ index: 0, total: 0 })
+
     const savedPaths: string[] = []
     const failures: string[] = []
+    const targets: DownloadTarget[] = []
+    let includedSpotify = false
+
     try {
       for (let index = 0; index < links.length; index += 1) {
         if (cancelRequested.current) break
-        setQueue({ index: index + 1, total: links.length })
+        const link = links[index]
+        if (isSpotifyPublicLink(link)) {
+          includedSpotify = true
+          setMessage({
+            type: 'info',
+            text: \`Reading public Spotify track metadata (\${index + 1} of \${links.length})…\`,
+          })
+          const result = await fetchPublicSpotifyLink(link)
+          if (!result.tracks.length) {
+            throw new Error(\`Spotify link \${index + 1} did not expose any tracks. Try a public track, album, or playlist link.\`)
+          }
+          if (result.tracks.length > 20 && !window.confirm(
+            \`This Spotify link contains \${result.tracks.length} tracks. Resonance will search for a matching audio source for each track. Download all \${result.tracks.length} tracks?\`,
+          )) {
+            setMessage({ type: 'info', text: 'Spotify download cancelled before any files were downloaded.' })
+            return
+          }
+          for (const track of result.tracks) {
+            const label = [track.artists.join(', '), track.name].filter(Boolean).join(' — ')
+            targets.push({
+              url: toSpotifySearchUrl(track),
+              label: label || track.name,
+              isSpotifyMatch: true,
+            })
+          }
+        } else {
+          targets.push({ url: link, label: \`Link \${index + 1}\`, isSpotifyMatch: false })
+        }
+      }
+
+      if (cancelRequested.current) {
+        setMessage({ type: 'info', text: 'Download cancelled before any files were downloaded.' })
+        return
+      }
+      if (!targets.length) {
+        setMessage({ type: 'error', text: 'No downloadable media links were found.' })
+        return
+      }
+
+      for (let index = 0; index < targets.length; index += 1) {
+        if (cancelRequested.current) break
+        const target = targets[index]
+        setQueue({ index: index + 1, total: targets.length })
         setProgress(null)
         setMessage({
           type: 'info',
-          text: `Downloading ${index + 1} of ${links.length}…`,
+          text: \`Downloading \${index + 1} of \${targets.length}: \${target.label}…\`,
         })
         try {
           const savedPath = await invoke<string>('download_audio', {
-            url: links[index],
+            url: target.url,
             outputDir: musicFolderPath,
             format,
           })
@@ -131,7 +200,8 @@ export function DownloadSection({
           setDownloadedPaths([...savedPaths])
         } catch (error) {
           if (cancelRequested.current) break
-          failures.push(`Link ${index + 1}: ${typeof error === 'string' ? error : 'Download failed.'}`)
+          const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : 'Download failed.'
+          failures.push(\`\${target.label}: \${detail}\`)
         }
       }
 
@@ -146,20 +216,26 @@ export function DownloadSection({
       if (cancelRequested.current) {
         setMessage({
           type: 'info',
-          text: `Download cancelled. ${savedPaths.length} of ${links.length} downloaded.`,
+          text: \`Download cancelled. \${savedPaths.length} of \${targets.length} audio file(s) downloaded.\`,
         })
       } else if (failures.length === 0) {
         setUrl('')
         setMessage({
           type: 'success',
-          text: `All ${savedPaths.length} download${savedPaths.length === 1 ? '' : 's'} complete and added to your library.`,
+          text: \`All \${savedPaths.length} audio file(s) downloaded and added to your library.\${includedSpotify ? ' Spotify track matches were downloaded from their media sources, not from Spotify itself.' : ''}\`,
         })
       } else {
         setMessage({
           type: 'error',
-          text: `${savedPaths.length} of ${links.length} downloaded. ${failures.join(' · ')}`,
+          text: \`\${savedPaths.length} of \${targets.length} audio file(s) downloaded. \${failures.slice(0, 4).join(' · ')}\${failures.length > 4 ? \` · and \${failures.length - 4} more failure(s)\` : ''}\`,
         })
       }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : 'Could not prepare this download.'
+      setMessage({
+        type: cancelRequested.current ? 'info' : 'error',
+        text: cancelRequested.current ? 'Download cancelled.' : detail,
+      })
     } finally {
       setBusy(false)
       setProgress(null)
@@ -196,7 +272,7 @@ export function DownloadSection({
         <div className="download-workspace">
           <div className="download-links-panel">
             <div className="download-field-topline">
-              <label className="download-field-label" htmlFor="download-url">Media URLs</label>
+              <label className="download-field-label" htmlFor="download-url">Media or Spotify URLs</label>
               <span>ONE PER LINE</span>
             </div>
             <textarea
@@ -204,12 +280,12 @@ export function DownloadSection({
               className="download-url-input download-url-textarea"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
-              placeholder={'Paste one or more links here…\nhttps://…\nhttps://…'}
+              placeholder={'Paste media URLs or public Spotify links…\nhttps://…\nhttps://open.spotify.com/track/…'}
               autoComplete="off"
               rows={6}
               disabled={busy}
             />
-            <div className="download-url-hint">Links are processed one at a time, in the order you add them.</div>
+            <div className="download-url-hint">Direct media links download as-is. Public Spotify links are resolved to track details, then matched against available audio sources; check the matches and only save audio you have permission to download.</div>
           </div>
 
           <div className="download-options-panel">
@@ -232,9 +308,6 @@ export function DownloadSection({
                   {musicFolderPath ? musicFolderPath : 'No Music folder selected'}
                 </span>
               </div>
-              <button type="button" className="download-change-folder" onClick={onChooseMusicFolder} disabled={busy}>
-                Change
-              </button>
             </div>
 
             <button className="download-submit download-submit-full" type="submit" disabled={busy || !url.trim()}>
