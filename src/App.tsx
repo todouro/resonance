@@ -245,20 +245,7 @@ function App() {
         onOpenAddToPlaylist={setPlaylistToAddSongs}
         playlistName={newPlaylistName}
         setPlaylistName={setNewPlaylistName}
-        onAddMusicFolder={handleMusicFolder}
-        onAddCoverFolder={handleCoverFolder}
-        isDesktop={isDesktop}
-        onNativeMusicFolder={handleNativeMusicFolder}
-        onNativeCoverFolder={handleNativeCoverFolder}
-        onRescanMusicFolder={handleRescanMusicFolder}
-        onRescanCoverFolder={handleRescanCoverFolder}
-        isScanningMusic={isScanningMusic}
-        isScanningCovers={isScanningCovers}
-        musicFolderName={musicFolderName}
-        coverFolderName={coverFolderName}
-        scanNotice={scanNotice}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenSpotify={() => setIsSpotifyImportOpen(true)}
       />
 
       <section className="content">
@@ -275,7 +262,7 @@ function App() {
               <DownloadSection
                 musicFolderPath={configuredMusicFolderPath}
                 isDesktop={isDesktop}
-                onChooseMusicFolder={handleNativeMusicFolder}
+                onOpenSpotify={() => setIsSpotifyImportOpen(true)}
                 onRefreshLibrary={handleRescanMusicFolder}
               />
             </motion.div>
@@ -504,6 +491,15 @@ function App() {
           <SettingsModal
             key="settings-modal"
             onClose={() => setIsSettingsOpen(false)}
+            musicFolderName={musicFolderName || configuredMusicFolderPath}
+            coverFolderName={coverFolderName}
+            isDesktop={isDesktop}
+            isScanningMusic={isScanningMusic}
+            isScanningCovers={isScanningCovers}
+            onChooseMusicFolder={handleNativeMusicFolder}
+            onChooseCoverFolder={handleNativeCoverFolder}
+            onRescanMusicFolder={handleRescanMusicFolder}
+            onRescanCoverFolder={handleRescanCoverFolder}
           />
         )}
       </AnimatePresence>
