@@ -29,6 +29,15 @@ export type SidebarProps = {
   onAutoHideLeave?: () => void
 }
 
+const playlistAccentColors = [
+  '#a8b0bc',
+  '#bba2d1',
+  '#92bdb0',
+  '#cfb08a',
+  '#8daed6',
+  '#d4a3b2',
+]
+
 export function Sidebar({
   activePlaylistId,
   playlists,
@@ -47,94 +56,140 @@ export function Sidebar({
   onAutoHideEnter,
   onAutoHideLeave,
 }: SidebarProps) {
+  const favoritesPlaylist = playlists.find((playlist) => playlist.id === favoritesId)
+  const userPlaylists = playlists.filter((playlist) => playlist.id !== favoritesId)
+
+  const handlePlaylistKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+    playlistId: string,
+  ) => {
+    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault()
+      onSelect(playlistId)
+    }
+  }
+
   return (
-    <aside className="sidebar" onMouseEnter={autoHideEnabled ? onAutoHideEnter : undefined} onMouseLeave={autoHideEnabled ? onAutoHideLeave : undefined}>
+    <aside
+      className="sidebar"
+      onMouseEnter={autoHideEnabled ? onAutoHideEnter : undefined}
+      onMouseLeave={autoHideEnabled ? onAutoHideLeave : undefined}
+    >
       <nav className="nav-stack" aria-label="Music sections">
         <button
-          className={activePlaylistId === libraryId ? 'nav-item active' : 'nav-item'}
+          className={activePlaylistId === libraryId ? 'nav-item nav-library-item active' : 'nav-item nav-library-item'}
           type="button"
+          aria-current={activePlaylistId === libraryId ? 'page' : undefined}
           onClick={() => onSelect(libraryId)}
         >
-          <DiscFilled size={18} />
+          <DiscFilled size={14} />
           <span>All Songs</span>
           <em>{tracks.length}</em>
         </button>
-        {playlists.map((playlist) => (
+
+        {favoritesPlaylist && (
           <div
-            key={playlist.id}
-            className={`nav-item nav-playlist-item ${activePlaylistId === playlist.id ? 'active' : ''}`}
-            onClick={() => onSelect(playlist.id)}
+            className={`nav-item nav-playlist-item nav-favorites-item ${activePlaylistId === favoritesPlaylist.id ? 'active' : ''}`}
+            onClick={() => onSelect(favoritesPlaylist.id)}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-                e.preventDefault()
-                onSelect(playlist.id)
-              }
-            }}
+            aria-current={activePlaylistId === favoritesPlaylist.id ? 'page' : undefined}
+            onKeyDown={(event) => handlePlaylistKeyDown(event, favoritesPlaylist.id)}
           >
-            {playlist.id === favoritesId ? <HeartFilled size={18} /> : <PlaylistFilled size={18} />}
-            <span className="nav-playlist-name">{playlist.name}</span>
-            <em>{playlist.trackIds.length}</em>
+            <HeartFilled size={14} />
+            <span className="nav-playlist-name">Favorites</span>
+            <em>{favoritesPlaylist.trackIds.length}</em>
             <div className="nav-item-actions">
               <PlaylistActionMenu
-                playlist={playlist}
+                playlist={favoritesPlaylist}
                 onAddToPlaylist={onOpenAddToPlaylist}
                 onRenamePlaylist={onRenamePlaylist}
                 onDeletePlaylist={onDeletePlaylist}
               />
             </div>
           </div>
-        ))}
-        <form
-          className="nav-item playlist-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            onCreate()
-          }}
-        >
-          <PlaylistFilled size={18} className="playlist-form-icon" />
-          <input
-            value={playlistName}
-            onChange={(event) => setPlaylistName(event.target.value)}
-            placeholder="New playlist"
-            aria-label="New playlist name"
-          />
-          <button
-            type="submit"
-            aria-label="Create playlist"
-            className="playlist-add-btn"
-            title="Create playlist"
+        )}
+
+        <section className="nav-playlists-section" aria-label="Your playlists">
+          <div className="nav-section-heading">Your Playlists</div>
+
+          {userPlaylists.map((playlist, index) => (
+            <div
+              key={playlist.id}
+              className={`nav-item nav-playlist-item ${activePlaylistId === playlist.id ? 'active' : ''}`}
+              onClick={() => onSelect(playlist.id)}
+              role="button"
+              tabIndex={0}
+              aria-current={activePlaylistId === playlist.id ? 'page' : undefined}
+              onKeyDown={(event) => handlePlaylistKeyDown(event, playlist.id)}
+            >
+              <span
+                className="nav-playlist-color"
+                style={{ backgroundColor: playlistAccentColors[index % playlistAccentColors.length] }}
+                aria-hidden="true"
+              />
+              <span className="nav-playlist-name">{playlist.name}</span>
+              <div className="nav-item-actions">
+                <PlaylistActionMenu
+                  playlist={playlist}
+                  onAddToPlaylist={onOpenAddToPlaylist}
+                  onRenamePlaylist={onRenamePlaylist}
+                  onDeletePlaylist={onDeletePlaylist}
+                />
+              </div>
+            </div>
+          ))}
+
+          <form
+            className="nav-item playlist-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onCreate()
+            }}
           >
-            <PlusFilled size={14} />
-          </button>
-        </form>
-
-
-        <button
-          type="button"
-          className={`nav-item ${isDownloadsActive ? 'active' : ''}`}
-          title="Download audio with yt-dlp"
-          aria-current={isDownloadsActive ? 'page' : undefined}
-          onClick={onOpenDownloads}
-        >
-          <Download size={18} />
-          <span>Downloads</span>
-        </button>
+            <PlaylistFilled size={14} className="playlist-form-icon" />
+            <input
+              value={playlistName}
+              onChange={(event) => setPlaylistName(event.target.value)}
+              placeholder="New playlist"
+              aria-label="New playlist name"
+            />
+            <button
+              type="submit"
+              aria-label="Create playlist"
+              className="playlist-add-btn"
+              title="Create playlist"
+            >
+              <PlusFilled size={14} />
+            </button>
+          </form>
+        </section>
 
         <div className="sidebar-divider" role="separator" />
 
-        <button
-          type="button"
-          className="nav-item nav-settings-btn"
-          title="Open settings"
-          aria-label="Settings"
-          onClick={onOpenSettings}
-        >
-          <SettingsFilled size={18} />
-          <span>Settings</span>
-        </button>
+        <div className="nav-secondary">
+          <button
+            type="button"
+            className={`nav-item ${isDownloadsActive ? 'active' : ''}`}
+            title="Download audio with yt-dlp"
+            aria-current={isDownloadsActive ? 'page' : undefined}
+            onClick={onOpenDownloads}
+          >
+            <Download size={14} />
+            <span>Downloads</span>
+          </button>
 
+          <button
+            type="button"
+            className="nav-item nav-settings-btn"
+            title="Open settings"
+            aria-label="Settings"
+            onClick={onOpenSettings}
+          >
+            <SettingsFilled size={14} />
+            <span>Settings</span>
+          </button>
+        </div>
       </nav>
     </aside>
   )
