@@ -1,132 +1,135 @@
-# Resonance
+<p align="center">
+  <img src="public/resonance-logo.png" alt="Resonance pixel-art CD logo" width="144" />
+</p>
 
-A polished local-first music player for your browser and Windows desktop.
+<h1 align="center">Resonance</h1>
 
-Resonance is designed for people who want a clean, focused listening experience without handing their library over to a cloud service. It keeps your music local, supports deep library management, playlist curation, embedded metadata, and a fast desktop experience built with React, TypeScript, and Tauri.
+<p align="center">
+  <strong>Your music. Your library. Your control.</strong><br />
+  A local-first music player for Windows and the browser.
+</p>
 
-## Highlights
+<p align="center">
+  <a href="https://github.com/todouro/resonance/releases/latest">
+    <img src="https://img.shields.io/github/v/release/todouro/resonance?style=for-the-badge&label=latest%20release" alt="Latest release" />
+  </a>
+  <a href="https://github.com/todouro/resonance/actions/workflows/verify.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/todouro/resonance/verify.yml?branch=main&style=for-the-badge&label=build%20%26%20tests" alt="Build and test status" />
+  </a>
+  <a href="https://github.com/todouro/resonance/stargazers">
+    <img src="https://img.shields.io/github/stars/todouro/resonance?style=for-the-badge" alt="GitHub stars" />
+  </a>
+  <img src="https://img.shields.io/badge/platform-Windows-64748b?style=for-the-badge" alt="Windows desktop" />
+</p>
 
-- Local-first music library management for your own audio files
-- Smart music-folder scanning and rescans
-- Playlist creation, favorites, and quick search
-- Editable track metadata and cover management
-- Desktop-quality playback with Tauri on Windows
-- Browser support for lightweight local listening
-- Built-in download workflow for saving audio into your Music folder
-- Modern UI with animated player controls and responsive layout
+<p align="center">
+  <a href="https://github.com/todouro/resonance/releases/latest"><strong>Download for Windows</strong></a>
+  ·
+  <a href="#quick-start">Run from source</a>
+  ·
+  <a href="https://github.com/todouro/resonance/issues">Report an issue</a>
+</p>
+
+---
+
+## About
+
+Resonance is built for people who want a focused listening experience without moving their music library into a cloud service. Organize your local audio, build playlists, edit track details, and manage cover art from one desktop-friendly interface.
+
+The Windows app uses **Tauri 2, React, and TypeScript**. A browser build is also available for lightweight local listening.
 
 ## Features
 
-### Music library
-- Add songs or entire music folders
-- Automatically detect and organize tracks from local folders
-- Rescan folders to keep the library up to date
-- Search by song, artist, or album
-- Track totals and total playtime at a glance
+| | What you can do |
+|---|---|
+| **Local music library** | Scan a music folder, rescan it as your collection changes, and search by song, artist, or album. |
+| **Playback controls** | Play and pause, skip tracks, seek, adjust volume, shuffle, and repeat. |
+| **Playlists & favorites** | Create playlists, rename or remove them, manage their tracks, and keep your favorites together. |
+| **Track details** | Edit supported metadata and manage cover art for your collection. |
+| **Keyboard shortcuts** | Control playback with configurable shortcuts. |
+| **Audio downloads** | Use the built-in `yt-dlp` workflow, choose an output folder and available audio format, and monitor or cancel downloads. |
+| **Desktop storage** | Keep library state and preferences in the Windows app's local user-data storage. |
 
-### Playback and management
-- Play, pause, skip, repeat, shuffle, and volume controls
-- Favorites playlist support
-- Playlist actions including rename, delete, and add tracks
-- Keyboard shortcuts for efficient playback control
-- Metadata editing for track details
+## Download
 
-### Desktop experience
-- Windows desktop app built with Tauri
-- AppData-backed local storage for library and playback preferences
-- Local cover art handling and durable references
-- Built-in setup flow for choosing music and cover folders
+**Windows:** get the installer from the [latest GitHub Release](https://github.com/todouro/resonance/releases/latest). Releases may lag behind the unreleased development version on `main`.
 
-### Download tools
-- Save audio into your Music folder with yt-dlp integration
-- Progress and cancel support for downloads
-- First-run setup to bootstrap required tooling securely
-- Audio conversion support for common formats including MP3, M4A, Opus, FLAC, and WAV
-
-## Tech stack
-
-- React 19
-- TypeScript
-- Vite
-- Zustand
-- Howler.js
-- Framer Motion
-- Tauri 2
-- Rust backend support for desktop integration
-
-## Requirements
-
-- Node.js 22.12 or later (Node.js 24 LTS recommended)
-- npm
-- For Windows desktop builds: Rust stable toolchain and Microsoft Visual Studio C++ Build Tools
+The release page contains the available Windows installer formats. For development builds, open [GitHub Actions](https://github.com/todouro/resonance/actions/workflows/verify.yml), choose a successful run, and download its `Resonance-Windows-Setup` artifact. Action artifacts are temporary; use a published Release for a stable download link.
 
 ## Quick start
 
-Clone the repository and install dependencies:
+### Requirements
+
+- Node.js **22.12 or later** (Node.js 24 LTS recommended)
+- npm
+- Git
+
+### Run the browser build
 
 ```bash
 git clone https://github.com/todouro/resonance.git
 cd resonance
-npm install
-```
-
-Run the app locally in the browser:
-
-```bash
+npm ci
 npm run dev
 ```
 
-The development server runs on http://localhost:3000 by default. If you want to expose it on a trusted network, run:
+Open [http://localhost:3000](http://localhost:3000).
+
+The browser build is useful for trying the interface, but local file access and persistence differ from the native Windows app.
+
+### Build the Windows desktop app
+
+For a native build, use Windows with the Rust stable toolchain and Microsoft Visual Studio C++ Build Tools installed.
 
 ```bash
-npm run dev -- --host 0.0.0.0
-```
-
-Use this only on a trusted network and avoid permissive host settings for convenience.
-
-## Production and build commands
-
-Run tests, lint, and a production build:
-
-```bash
-npm test
-npm run lint
-npm run build
-npm run preview
-```
-
-Build the Windows installer with Tauri:
-
-```bash
+npm ci
 npm run tauri:build:win
 ```
 
-The generated installer is output to the Tauri bundle directory in the project target folder.
+The NSIS installer is written under `src-tauri/target/release/bundle/nsis/`. Tauri's Windows bundle configuration also supports MSI output when building all configured bundle targets.
 
-## Notes on local file playback
+## Development commands
 
-- In the browser build, imported audio is only available while the browser can access the imported file references.
-- For a durable desktop experience, use the Windows app, which stores library state in the app's local user data directory.
-- Some audio formats rely on browser or OS decoder support. If a format cannot play, check compatibility and the platform-specific setup requirements.
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Start the Vite development server on port 3000. |
+| `npm test` | Run the automated regression tests. |
+| `npm run lint` | Check source code with Oxlint. |
+| `npm run build` | Run TypeScript project checks and create a production web build. |
+| `npm run preview` | Preview the production web build locally. |
+| `npm run tauri:build:win` | Build the Windows NSIS installer. |
+
+Before submitting changes, run the tests, lint, and production build. Changes to desktop behavior should also be exercised in the native app when possible.
+
+## How it is built
+
+- **React 19 + TypeScript** — user interface
+- **Vite** — development server and frontend build
+- **Zustand** — application state
+- **Howler.js** — audio playback
+- **Framer Motion** — UI transitions and animation
+- **Tauri 2 + Rust** — Windows desktop integration and local storage
+
+## Project principles
+
+- **Local-first:** the music library is centered on files you manage.
+- **Focused:** controls and tools are designed around listening and organizing.
+- **Transparent:** the repository includes the source and build workflows.
+- **Practical:** the browser build and Windows desktop app serve different needs without pretending their file-system capabilities are identical.
 
 ## Contributing
 
-Contributions are welcome. Please work on a feature branch and submit a focused pull request with the relevant changes.
+Issues and focused pull requests are welcome. For a smoother review:
 
-Before opening a PR, run:
+1. Create a feature branch.
+2. Keep the change scoped and explain its user-facing effect.
+3. Run `npm test`, `npm run lint`, and `npm run build`.
+4. Verify the affected interactions in the browser or Windows app where applicable.
 
-```bash
-npm test
-npm run lint
-npm run build
-```
+Found a bug or have an idea? [Open an issue](https://github.com/todouro/resonance/issues).
 
-Also verify keyboard and pointer interactions in the app flow you changed.
+---
 
-## License
-
-This project is distributed under the repository's existing license terms. Please check the repository for the current license file.
-
-## Project status
-
-Resonance is a polished local music player focused on simplicity, ownership of your library, and a premium personal listening experience on the desktop and in the browser.
+<p align="center">
+  Made for your local music library.
+</p>
