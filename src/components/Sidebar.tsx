@@ -49,12 +49,6 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <aside className="sidebar" onMouseEnter={autoHideEnabled ? onAutoHideEnter : undefined} onMouseLeave={autoHideEnabled ? onAutoHideLeave : undefined}>
-      <div className="brand">
-        <div className="brand-mark">
-          <img className="brand-logo" src="/resonance-logo.png" alt="" />
-        </div>
-      </div>
-
       <nav className="nav-stack" aria-label="Music sections">
         <button
           className={activePlaylistId === libraryId ? 'nav-item active' : 'nav-item'}
