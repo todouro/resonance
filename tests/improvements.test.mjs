@@ -248,10 +248,17 @@ test('UI typography tokens and form controls stay consistent across screens', ()
   assert.match(downloads, /<ChevronDown size=\{15\} className="download-format-chevron" aria-hidden="true" \/>/)
 })
 
-test('Sidebar starts with navigation and omits the brand header block', () => {
+test('Sidebar starts with navigation and uses compact, separated playlist groups', () => {
   const sidebar = fs.readFileSync(new URL('../src/components/Sidebar.tsx', import.meta.url), 'utf8')
+  const styles = fs.readFileSync(new URL('../src/App.css', import.meta.url), 'utf8')
 
   assert.doesNotMatch(sidebar, /className="brand(?:-mark|-logo)?"/)
   assert.doesNotMatch(sidebar, /<strong>Resonance<\/strong>|Local library|resonance-logo\.png/)
-  assert.match(sidebar, /<aside className="sidebar"[\s\S]*?<nav className="nav-stack"/)
+  assert.match(sidebar, /<aside[\s\S]*?className="sidebar"[\s\S]*?<nav className="nav-stack"/)
+  assert.match(sidebar, /nav-favorites-item/)
+  assert.match(sidebar, /nav-section-heading">Your Playlists/)
+  assert.match(sidebar, /nav-playlist-color/)
+  assert.match(sidebar, /userPlaylists = playlists.filter/)
+  assert.match(styles, /\.nav-section-heading\s*\{/)
+  assert.match(styles, /\.nav-playlist-color\s*\{/)
 })
