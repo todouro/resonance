@@ -53,10 +53,6 @@ export function Sidebar({
         <div className="brand-mark">
           <img className="brand-logo" src="/resonance-logo.png" alt="" />
         </div>
-        <div>
-          <strong>Resonance</strong>
-          <span>Local library</span>
-        </div>
       </div>
 
       <nav className="nav-stack" aria-label="Music sections">
