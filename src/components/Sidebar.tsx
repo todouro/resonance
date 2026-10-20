@@ -10,7 +10,7 @@ import { favoritesId, libraryId } from '../store/useMusicStore'
 import type { Playlist, Track } from '../types'
 import { PlaylistActionMenu } from './PlaylistActionMenu'
 
-export type SidebarProps = {
+type SidebarProps = {
   activePlaylistId: string
   playlists: Playlist[]
   tracks: Track[]
@@ -38,6 +38,60 @@ const playlistAccentColors = [
   '#d4a3b2',
 ]
 
+type SidebarPlaylistItemProps = {
+  playlist: Playlist
+  active: boolean
+  color?: string
+  showCount?: boolean
+  onSelect: (playlistId: string) => void
+  onRenamePlaylist: (playlist: Playlist) => void
+  onDeletePlaylist: (playlist: Playlist) => void
+  onOpenAddToPlaylist?: (playlist: Playlist) => void
+}
+
+function SidebarPlaylistItem({
+  playlist,
+  active,
+  color,
+  showCount = false,
+  onSelect,
+  onRenamePlaylist,
+  onDeletePlaylist,
+  onOpenAddToPlaylist,
+}: SidebarPlaylistItemProps) {
+  return (
+    <div className="nav-playlist-entry">
+      <button
+        type="button"
+        className={`nav-item nav-playlist-item ${active ? 'active' : ''}`}
+        onClick={() => onSelect(playlist.id)}
+        aria-current={active ? 'page' : undefined}
+      >
+        {color ? (
+          <span
+            className="nav-playlist-color"
+            style={{ backgroundColor: color }}
+            aria-hidden="true"
+          />
+        ) : (
+          <HeartFilled size={14} />
+        )}
+        <span className="nav-playlist-name">{playlist.name}</span>
+        {showCount && <em className="nav-playlist-count">{playlist.trackIds.length}</em>}
+      </button>
+
+      <div className="nav-item-actions">
+        <PlaylistActionMenu
+          playlist={playlist}
+          onAddToPlaylist={onOpenAddToPlaylist}
+          onRenamePlaylist={onRenamePlaylist}
+          onDeletePlaylist={onDeletePlaylist}
+        />
+      </div>
+    </div>
+  )
+}
+
 export function Sidebar({
   activePlaylistId,
   playlists,
@@ -59,14 +113,11 @@ export function Sidebar({
   const favoritesPlaylist = playlists.find((playlist) => playlist.id === favoritesId)
   const userPlaylists = playlists.filter((playlist) => playlist.id !== favoritesId)
 
-  const handlePlaylistKeyDown = (
-    event: React.KeyboardEvent<HTMLDivElement>,
-    playlistId: string,
-  ) => {
-    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
-      event.preventDefault()
-      onSelect(playlistId)
-    }
+  const playlistActions = {
+    onSelect,
+    onRenamePlaylist,
+    onDeletePlaylist,
+    onOpenAddToPlaylist,
   }
 
   return (
@@ -77,10 +128,10 @@ export function Sidebar({
     >
       <nav className="nav-stack" aria-label="Music sections">
         <button
-          className={activePlaylistId === libraryId ? 'nav-item nav-library-item active' : 'nav-item nav-library-item'}
           type="button"
-          aria-current={activePlaylistId === libraryId ? 'page' : undefined}
+          className={`nav-item nav-library-item ${activePlaylistId === libraryId ? 'active' : ''}`}
           onClick={() => onSelect(libraryId)}
+          aria-current={activePlaylistId === libraryId ? 'page' : undefined}
         >
           <DiscFilled size={14} />
           <span>All Songs</span>
@@ -88,56 +139,25 @@ export function Sidebar({
         </button>
 
         {favoritesPlaylist && (
-          <div
-            className={`nav-item nav-playlist-item nav-favorites-item ${activePlaylistId === favoritesPlaylist.id ? 'active' : ''}`}
-            onClick={() => onSelect(favoritesPlaylist.id)}
-            role="button"
-            tabIndex={0}
-            aria-current={activePlaylistId === favoritesPlaylist.id ? 'page' : undefined}
-            onKeyDown={(event) => handlePlaylistKeyDown(event, favoritesPlaylist.id)}
-          >
-            <HeartFilled size={14} />
-            <span className="nav-playlist-name">Favorites</span>
-            <em>{favoritesPlaylist.trackIds.length}</em>
-            <div className="nav-item-actions">
-              <PlaylistActionMenu
-                playlist={favoritesPlaylist}
-                onAddToPlaylist={onOpenAddToPlaylist}
-                onRenamePlaylist={onRenamePlaylist}
-                onDeletePlaylist={onDeletePlaylist}
-              />
-            </div>
-          </div>
+          <SidebarPlaylistItem
+            playlist={favoritesPlaylist}
+            active={activePlaylistId === favoritesId}
+            showCount
+            {...playlistActions}
+          />
         )}
 
         <section className="nav-playlists-section" aria-label="Your playlists">
-          <div className="nav-section-heading">Your Playlists</div>
+          <h2 className="nav-section-heading">Your Playlists</h2>
 
-          {userPlaylists.map((playlist, index) => (
-            <div
+          {userPlaylists.map((playlist) => (
+            <SidebarPlaylistItem
               key={playlist.id}
-              className={`nav-item nav-playlist-item ${activePlaylistId === playlist.id ? 'active' : ''}`}
-              onClick={() => onSelect(playlist.id)}
-              role="button"
-              tabIndex={0}
-              aria-current={activePlaylistId === playlist.id ? 'page' : undefined}
-              onKeyDown={(event) => handlePlaylistKeyDown(event, playlist.id)}
-            >
-              <span
-                className="nav-playlist-color"
-                style={{ backgroundColor: playlistAccentColors[index % playlistAccentColors.length] }}
-                aria-hidden="true"
-              />
-              <span className="nav-playlist-name">{playlist.name}</span>
-              <div className="nav-item-actions">
-                <PlaylistActionMenu
-                  playlist={playlist}
-                  onAddToPlaylist={onOpenAddToPlaylist}
-                  onRenamePlaylist={onRenamePlaylist}
-                  onDeletePlaylist={onDeletePlaylist}
-                />
-              </div>
-            </div>
+              playlist={playlist}
+              active={activePlaylistId === playlist.id}
+              color={playlistAccentColors[Math.abs(playlist.createdAt) % playlistAccentColors.length]}
+              {...playlistActions}
+            />
           ))}
 
           <form
