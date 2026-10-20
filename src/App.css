@@ -106,16 +106,16 @@
   transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
-.nav-item:hover,
+.nav-item:hover:not(.active) {
+  color: #e2e4e7;
+  background: rgba(255, 255, 255, 0.035);
+}
+
 .nav-item.active {
   color: #f0f1f2;
   background: #1d1f21;
   border-color: #33363a;
 }
-
-
-
-
 
 .nav-item em {
   color: #686e77;
@@ -129,8 +129,6 @@
 .nav-item.active em {
   color: #a5aab2;
 }
-
-
 
 .playlist-add-btn {
   display: grid;
@@ -559,7 +557,6 @@ h3 {
   position: relative;
   z-index: 2;
 }
-
 
 .cd-stage-motion {
   width: 100%;
@@ -1305,7 +1302,6 @@ h3 {
   background: #171a18;
   color: var(--text);
 }
-
 
 .track-action-menu {
   position: relative;
@@ -2277,7 +2273,7 @@ h3 {
   color: #f0f1f2;
 }
 
-/* Actions positioned absolutely so they don't displace resting count badge */
+/* Keep playlist actions out of the label area until the row is hovered or focused. */
 .nav-item-actions {
   position: absolute;
   top: 50%;
@@ -3056,8 +3052,6 @@ h3 {
   outline-offset: 3px;
 }
 
-
-
 /* First-launch library setup */
 .first-run-backdrop {
   z-index: 1100;
@@ -3307,7 +3301,6 @@ h3 {
   .first-run-footer { align-items: flex-start; }
 }
 
-
 /* Downloads section */
 .download-page { max-width: 900px; margin: 0 auto; padding: 16px 0 40px; }
 .download-page-header { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 30px; }
@@ -3436,7 +3429,6 @@ h3 {
 .download-completed-file code { overflow-wrap: anywhere; color: var(--text); }
 @media (max-width: 620px) { .download-url-row { flex-direction: column; } .download-submit { min-height: 46px; } .download-page-header { gap: 12px; } .download-heading-icon { width: 44px; height: 44px; flex-basis: 44px; } }
 
-
 /* Reusable status banner component */
 .status-banner {
   display: flex;
@@ -3481,7 +3473,6 @@ h3 {
   }
 }
 
-
 /* Smooth interaction polish */
 .content,
 .sidebar {
@@ -3493,8 +3484,6 @@ h3 {
 .track-list-transition {
   min-width: 0;
 }
-
-
 
 /* Downloads: a calmer, more deliberate workspace */
 .download-page {
@@ -3795,7 +3784,6 @@ h3 {
   }
 }
 
-
 /* React Bits-inspired glide highlight for three-dot action menus. */
 .glide-menu-highlight {
   position: absolute;
@@ -3845,7 +3833,6 @@ h3 {
 .download-cancel:hover:not(:disabled) { background: rgba(255,255,255,.07); }
 .download-cancel:disabled { opacity: .55; cursor: default; }
 @media (prefers-reduced-motion: reduce) { .download-progress-fill.is-indeterminate { animation: none; width: 100%; opacity: .45; } }
-
 
 /* Settings sections and preference controls */
 .settings-modal-card { width: min(100%, 760px); max-height: 90vh; display: flex; flex-direction: column; }
