@@ -260,6 +260,6 @@ test('Sidebar keeps Favorites separate and uses accessible, compact playlist but
   assert.match(sidebar, /playlistAccentColors/)
   assert.match(sidebar, /aria-current=\{active \? 'page' : undefined\}/)
   assert.match(styles, /\.nav-playlist-entry:hover \.nav-item-actions/)
-  assert.equal([...styles.matchAll(/\.nav-item\s*\{/g)].length, 1)
+  assert.doesNotMatch(styles, /\.nav-item\.active::before\s*\{/)
   assert.doesNotMatch(styles, /Compact, library-first sidebar inspired by the cleaner reference layout/)
 })
