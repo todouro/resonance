@@ -248,3 +248,10 @@ test('UI typography tokens and form controls stay consistent across screens', ()
   assert.match(downloads, /<ChevronDown size=\{15\} className="download-format-chevron" aria-hidden="true" \/>/)
 })
 
+test('Sidebar starts with navigation and omits the brand header block', () => {
+  const sidebar = fs.readFileSync(new URL('../src/components/Sidebar.tsx', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(sidebar, /className="brand(?:-mark|-logo)?"/)
+  assert.doesNotMatch(sidebar, /<strong>Resonance<\/strong>|Local library|resonance-logo\.png/)
+  assert.match(sidebar, /<aside className="sidebar"[\s\S]*?<nav className="nav-stack"/)
+})

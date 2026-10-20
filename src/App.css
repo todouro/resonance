@@ -61,34 +61,6 @@
   transition: box-shadow 0.6s ease, border-color 0.6s ease;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 38px;
-}
-
-.brand-mark {
-  width: 46px;
-  height: 46px;
-  display: grid;
-  place-items: center;
-  border-radius: 14px;
-  color: #0b0c0b;
-  background: var(--lime);
-}
-
-.brand strong,
-.brand span {
-  display: block;
-}
-
-.brand strong {
-  font-size: 18px;
-  letter-spacing: 0;
-}
-
-.brand span,
 .eyebrow,
 .track-meta span,
 .player-track span,
@@ -2039,10 +2011,6 @@ h3 {
     max-height: none;
     overflow-y: visible;
     padding: 22px 14px 190px;
-  }
-
-  .brand {
-    margin-bottom: 16px;
   }
 
   .nav-stack {

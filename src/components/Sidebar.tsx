@@ -1,6 +1,5 @@
 import { Download } from 'lucide-react'
 import {
-  AudioLinesFilled,
   DiscFilled,
   HeartFilled,
   PlaylistFilled,
@@ -50,16 +49,6 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <aside className="sidebar" onMouseEnter={autoHideEnabled ? onAutoHideEnter : undefined} onMouseLeave={autoHideEnabled ? onAutoHideLeave : undefined}>
-      <div className="brand">
-        <div className="brand-mark">
-          <AudioLinesFilled size={22} />
-        </div>
-        <div>
-          <strong>Resonance</strong>
-          <span>Local library</span>
-        </div>
-      </div>
-
       <nav className="nav-stack" aria-label="Music sections">
         <button
           className={activePlaylistId === libraryId ? 'nav-item active' : 'nav-item'}
