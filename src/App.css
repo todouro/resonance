@@ -2021,7 +2021,10 @@ h3 {
   }
 
   .nav-playlists-section {
-    display: contents;
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 10px;
   }
 
   .nav-section-heading {
@@ -2112,6 +2115,10 @@ h3 {
 @media (max-width: 470px) {
   .nav-stack {
     grid-template-columns: 1fr;
+  }
+
+  .nav-playlists-section {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .hero-player {
@@ -2267,6 +2274,10 @@ h3 {
   height: 7px;
   flex: 0 0 7px;
   border-radius: 2px;
+}
+
+.nav-playlist-item:hover .nav-playlist-name {
+  color: #e2e4e7;
 }
 
 .nav-playlist-item.active .nav-playlist-name {
