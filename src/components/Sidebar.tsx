@@ -10,7 +10,7 @@ import { favoritesId, libraryId } from '../store/useMusicStore'
 import type { Playlist, Track } from '../types'
 import { PlaylistActionMenu } from './PlaylistActionMenu'
 
-type SidebarProps = {
+export type SidebarProps = {
   activePlaylistId: string
   playlists: Playlist[]
   tracks: Track[]
