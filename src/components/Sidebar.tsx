@@ -1,4 +1,5 @@
-import { Download } from 'lucide-react'
+import { Check, ChevronDown, Download, X } from 'lucide-react'
+import { useState } from 'react'
 import {
   DiscFilled,
   HeartFilled,
@@ -41,6 +42,7 @@ const playlistAccentColors = [
 type SidebarPlaylistItemProps = {
   playlist: Playlist
   active: boolean
+  favorite?: boolean
   color?: string
   showCount?: boolean
   onSelect: (playlistId: string) => void
@@ -52,6 +54,7 @@ type SidebarPlaylistItemProps = {
 function SidebarPlaylistItem({
   playlist,
   active,
+  favorite = false,
   color,
   showCount = false,
   onSelect,
@@ -63,7 +66,7 @@ function SidebarPlaylistItem({
     <div className="nav-playlist-entry">
       <button
         type="button"
-        className={`nav-item nav-playlist-item ${active ? 'active' : ''}`}
+        className={`nav-item nav-playlist-item ${favorite ? 'nav-favorites-item' : ''} ${active ? 'active' : ''}`}
         onClick={() => onSelect(playlist.id)}
         aria-current={active ? 'page' : undefined}
       >
@@ -74,7 +77,7 @@ function SidebarPlaylistItem({
             aria-hidden="true"
           />
         ) : (
-          <HeartFilled size={14} />
+          <HeartFilled size={16} />
         )}
         <span className="nav-playlist-name">{playlist.name}</span>
         {showCount && <em className="nav-playlist-count">{playlist.trackIds.length}</em>}
@@ -110,6 +113,8 @@ export function Sidebar({
   onAutoHideEnter,
   onAutoHideLeave,
 }: SidebarProps) {
+  const [isPlaylistsExpanded, setIsPlaylistsExpanded] = useState(true)
+  const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false)
   const favoritesPlaylist = playlists.find((playlist) => playlist.id === favoritesId)
   const userPlaylists = playlists.filter((playlist) => playlist.id !== favoritesId)
 
@@ -118,6 +123,23 @@ export function Sidebar({
     onRenamePlaylist,
     onDeletePlaylist,
     onOpenAddToPlaylist,
+  }
+
+  const handleCreatePlaylist = () => {
+    if (!playlistName.trim()) return
+    onCreate()
+    setIsCreatingPlaylist(false)
+  }
+
+  const handleTogglePlaylistCreation = () => {
+    if (isCreatingPlaylist) {
+      setIsCreatingPlaylist(false)
+      setPlaylistName('')
+      return
+    }
+
+    setIsPlaylistsExpanded(true)
+    setIsCreatingPlaylist(true)
   }
 
   return (
@@ -133,7 +155,7 @@ export function Sidebar({
           onClick={() => onSelect(libraryId)}
           aria-current={activePlaylistId === libraryId ? 'page' : undefined}
         >
-          <DiscFilled size={14} />
+          <DiscFilled size={16} />
           <span>All Songs</span>
           <em>{tracks.length}</em>
         </button>
@@ -142,47 +164,86 @@ export function Sidebar({
           <SidebarPlaylistItem
             playlist={favoritesPlaylist}
             active={activePlaylistId === favoritesId}
+            favorite
             showCount
             {...playlistActions}
           />
         )}
 
-        <section className="nav-playlists-section" aria-label="Your playlists">
-          <h2 className="nav-section-heading">Your Playlists</h2>
-
-          {userPlaylists.map((playlist) => (
-            <SidebarPlaylistItem
-              key={playlist.id}
-              playlist={playlist}
-              active={activePlaylistId === playlist.id}
-              color={playlistAccentColors[Math.abs(playlist.createdAt) % playlistAccentColors.length]}
-              {...playlistActions}
-            />
-          ))}
-
-          <form
-            className="nav-item playlist-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              onCreate()
-            }}
-          >
-            <PlaylistFilled size={14} className="playlist-form-icon" />
-            <input
-              value={playlistName}
-              onChange={(event) => setPlaylistName(event.target.value)}
-              placeholder="New playlist"
-              aria-label="New playlist name"
-            />
+        <section
+          className={`nav-playlists-section ${isPlaylistsExpanded ? '' : 'is-collapsed'}`}
+          aria-label="Playlists"
+        >
+          <h2 className="nav-section-header">
             <button
-              type="submit"
-              aria-label="Create playlist"
-              className="playlist-add-btn"
-              title="Create playlist"
+              type="button"
+              className="nav-section-heading"
+              aria-expanded={isPlaylistsExpanded}
+              aria-controls="sidebar-playlists-list"
+              onClick={() => setIsPlaylistsExpanded((expanded) => !expanded)}
             >
-              <PlusFilled size={14} />
+              <ChevronDown
+                size={14}
+                className="nav-section-chevron"
+                aria-hidden="true"
+              />
+              <span>Playlists</span>
             </button>
-          </form>
+            <button
+              type="button"
+              className="playlist-add-btn nav-playlist-create-btn"
+              aria-label={isCreatingPlaylist ? 'Cancel playlist creation' : 'Create playlist'}
+              title={isCreatingPlaylist ? 'Cancel playlist creation' : 'Create playlist'}
+              onClick={handleTogglePlaylistCreation}
+            >
+              {isCreatingPlaylist ? <X size={16} /> : <PlusFilled size={16} />}
+            </button>
+          </h2>
+
+          <div
+            id="sidebar-playlists-list"
+            className="nav-playlists-list"
+            hidden={!isPlaylistsExpanded}
+          >
+            {userPlaylists.map((playlist) => (
+              <SidebarPlaylistItem
+                key={playlist.id}
+                playlist={playlist}
+                active={activePlaylistId === playlist.id}
+                color={playlistAccentColors[Math.abs(playlist.createdAt) % playlistAccentColors.length]}
+                {...playlistActions}
+              />
+            ))}
+
+            {isCreatingPlaylist && (
+              <form
+                className="nav-item playlist-form"
+                autoComplete="off"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  handleCreatePlaylist()
+                }}
+              >
+                <PlaylistFilled size={16} className="playlist-form-icon" aria-hidden="true" />
+                <input
+                  value={playlistName}
+                  onChange={(event) => setPlaylistName(event.target.value)}
+                  placeholder="Playlist name"
+                  aria-label="New playlist name"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  aria-label="Save playlist"
+                  className="playlist-add-btn playlist-save-btn"
+                  title="Save playlist"
+                  disabled={!playlistName.trim()}
+                >
+                  <Check size={15} />
+                </button>
+              </form>
+            )}
+          </div>
         </section>
 
         <div className="sidebar-divider" role="separator" />
@@ -190,12 +251,12 @@ export function Sidebar({
         <div className="nav-secondary">
           <button
             type="button"
-            className={`nav-item ${isDownloadsActive ? 'active' : ''}`}
+            className={`nav-item nav-downloads-btn ${isDownloadsActive ? 'active' : ''}`}
             title="Download audio with yt-dlp"
             aria-current={isDownloadsActive ? 'page' : undefined}
             onClick={onOpenDownloads}
           >
-            <Download size={14} />
+            <Download size={16} />
             <span>Downloads</span>
           </button>
 
@@ -206,7 +267,7 @@ export function Sidebar({
             aria-label="Settings"
             onClick={onOpenSettings}
           >
-            <SettingsFilled size={14} />
+            <SettingsFilled size={16} />
             <span>Settings</span>
           </button>
         </div>

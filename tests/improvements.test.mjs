@@ -240,7 +240,8 @@ test('UI typography tokens and form controls stay consistent across screens', ()
   assert.match(styles, /\.form-group input\s*\{[\s\S]*?border-radius:\s*var\(--radius-control\);/)
   assert.match(styles, /\.download-format-wrap select\s*\{[\s\S]*?appearance:\s*none;[\s\S]*?-webkit-appearance:\s*none;/)
   assert.match(styles, /\.download-format-wrap:focus-within\s*\{[\s\S]*?box-shadow:\s*0 0 0 3px var\(--focus-ring\);/)
-  assert.match(styles, /button:focus-visible\s*\{[\s\S]*?outline:\s*2px solid var\(--lime/)
+  assert.match(styles, /button:focus:not\(:focus-visible\)\s*\{[\s\S]*?outline:\s*none;/)
+  assert.match(styles, /button:focus-visible\s*\{[\s\S]*?outline:\s*1px solid rgba\(/
 
   // Keep a single base rule for each Downloads field, rather than competing old/new overrides.
   assert.equal([...styles.matchAll(/\.download-url-input\s*\{/g)].length, 1)
@@ -256,10 +257,17 @@ test('Sidebar keeps Favorites separate and uses accessible, compact playlist but
   assert.doesNotMatch(sidebar, /<strong>Resonance<\/strong>|Local library|resonance-logo\.png/)
   assert.match(sidebar, /<nav className="nav-stack"/)
   assert.match(sidebar, /function SidebarPlaylistItem/)
-  assert.match(sidebar, /nav-section-heading">Your Playlists/)
+  assert.match(sidebar, /nav-section-heading"[\s\S]*?<span>Playlists<\/span>/)
+  assert.match(sidebar, /aria-expanded=\{isPlaylistsExpanded\}/)
+  assert.match(sidebar, /hidden=\{!isPlaylistsExpanded\}/)
+  assert.match(sidebar, /nav-favorites-item/)
+  assert.match(sidebar, /isCreatingPlaylist && \(/
   assert.match(sidebar, /playlistAccentColors/)
   assert.match(sidebar, /aria-current=\{active \? 'page' : undefined\}/)
   assert.match(styles, /\.nav-playlist-entry:hover \.nav-item-actions/)
+  assert.match(styles, /\.nav-playlists-section:hover \.nav-playlist-create-btn/)
+  assert.match(styles, /\.nav-playlists-list\s*\{[\s\S]*?overflow-y:\s*auto;/)
+  assert.match(styles, /\.nav-secondary\s*\{[\s\S]*?flex:\s*0 0 auto;/)
   assert.doesNotMatch(styles, /\.nav-item\.active::before\s*\{/)
   assert.doesNotMatch(styles, /Compact, library-first sidebar inspired by the cleaner reference layout/)
 })

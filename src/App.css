@@ -46,15 +46,17 @@
 }
 
 .sidebar {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   height: 100%;
+  min-height: 0;
   max-height: 100vh;
-  padding: 10px 10px 16px;
+  padding: 12px 11px;
   border-right: 1px solid var(--ambient-border, var(--line));
   background: rgba(14, 16, 17, 0.92);
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
 }
 
 .eyebrow,
@@ -67,10 +69,11 @@
 
 .nav-stack {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 4px;
-  min-height: 100%;
+  gap: 5px;
+  height: 100%;
+  min-height: 0;
 }
 
 .nav-item,
@@ -87,17 +90,17 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
+  gap: 11px;
   width: 100%;
-  height: 38px;
-  min-height: 38px;
-  padding: 0 10px;
-  color: #898e96;
+  height: 42px;
+  min-height: 42px;
+  padding: 0 12px;
+  color: #9298a1;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 10px;
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -155,9 +158,9 @@
   position: relative;
 }
 .nav-playlist-item {
-  height: 36px;
-  min-height: 36px;
-  border-radius: 8px;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 9px;
 }
 
 .nav-playlist-entry:hover,
@@ -171,14 +174,15 @@
 }
 
 .playlist-form {
-  height: 34px;
-  min-height: 34px;
-  margin-top: 3px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  height: 38px;
+  min-height: 38px;
+  margin-top: 2px;
   padding-right: 5px;
   cursor: default;
   background: transparent;
   border-color: transparent;
-  border-radius: 8px;
+  border-radius: 9px;
 }
 
 .playlist-form:hover,
@@ -214,7 +218,7 @@
   outline: 0;
   background: transparent;
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .playlist-form input::placeholder {
@@ -1996,10 +2000,11 @@ h3 {
   }
 
   .sidebar {
+    display: block;
     position: static;
     height: auto;
     max-height: none;
-    overflow-y: visible;
+    overflow: visible;
     min-height: 0;
     padding: 18px;
     border-right: 0;
@@ -2023,13 +2028,23 @@ h3 {
   .nav-playlists-section {
     display: grid;
     grid-column: 1 / -1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
     margin-top: 10px;
+    overflow: visible;
   }
 
-  .nav-section-heading {
+  .nav-section-header {
     grid-column: 1 / -1;
-    margin-top: 10px;
+    margin-top: 0;
+  }
+
+  .nav-playlists-list {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-height: 0;
+    overflow: visible;
   }
 
   .sidebar-divider,
@@ -2039,6 +2054,7 @@ h3 {
 
   .nav-secondary {
     display: flex;
+    flex: 0 0 auto;
     gap: 6px;
     margin-top: 6px;
   }
@@ -2117,7 +2133,7 @@ h3 {
     grid-template-columns: 1fr;
   }
 
-  .nav-playlists-section {
+  .nav-playlists-list {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2245,7 +2261,7 @@ h3 {
   min-width: 0;
   overflow: hidden;
   color: #a2a7af;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2253,20 +2269,99 @@ h3 {
 
 .nav-playlists-section {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 4px;
-  margin-top: 18px;
+  min-height: 0;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.nav-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  line-height: normal;
 }
 
 .nav-section-heading {
-  margin: 0 0 4px;
-  padding: 0 10px;
-  color: #676d75;
-  font-size: 9px;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  height: 32px;
+  min-width: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 7px;
+  color: #9298a1;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.13em;
-  line-height: 1.6;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-align: left;
   text-transform: uppercase;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.nav-section-heading:hover {
+  color: #e2e4e7;
+}
+
+.nav-section-chevron {
+  flex: 0 0 auto;
+  transition: transform 160ms ease;
+}
+
+.nav-playlists-section.is-collapsed .nav-section-chevron {
+  transform: rotate(-90deg);
+}
+
+.nav-playlist-create-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  flex: 0 0 auto;
+  color: #aeb3ba;
+  background: transparent;
+  border-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nav-playlists-section:hover .nav-playlist-create-btn,
+.nav-playlists-section:focus-within .nav-playlist-create-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.nav-playlists-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.nav-playlists-list::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .nav-playlist-color {
@@ -2339,6 +2434,11 @@ h3 {
 @media (hover: none) {
   .nav-item-actions {
     opacity: 0.85;
+    pointer-events: auto;
+  }
+
+  .nav-playlist-create-btn {
+    opacity: 1;
     pointer-events: auto;
   }
 }
@@ -2855,15 +2955,16 @@ h3 {
   width: 100%;
   height: 1px;
   flex: 0 0 1px;
-  margin: 16px 3px 7px;
+  margin: 10px 3px 8px;
   background: rgba(255, 255, 255, 0.07);
 }
 
 .nav-secondary {
   display: grid;
-  gap: 4px;
-  margin-top: auto;
-  padding-top: 2px;
+  flex: 0 0 auto;
+  gap: 5px;
+  margin-top: 0;
+  padding-top: 0;
 }
 
 .nav-secondary .nav-item {
@@ -4065,7 +4166,13 @@ h3 {
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
+/* Pointer selection should not leave a bright keyboard ring around controls. */
+button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Keep keyboard navigation visible without the heavy white outline. */
 button:focus-visible {
-  outline: 2px solid var(--lime, #e6eaee);
+  outline: 1px solid rgba(174, 182, 192, 0.62);
   outline-offset: 2px;
 }
