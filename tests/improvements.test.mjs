@@ -241,7 +241,7 @@ test('UI typography tokens and form controls stay consistent across screens', ()
   assert.match(styles, /\.download-format-wrap select\s*\{[\s\S]*?appearance:\s*none;[\s\S]*?-webkit-appearance:\s*none;/)
   assert.match(styles, /\.download-format-wrap:focus-within\s*\{[\s\S]*?box-shadow:\s*0 0 0 3px var\(--focus-ring\);/)
   assert.match(styles, /button:focus:not\(:focus-visible\)\s*\{[\s\S]*?outline:\s*none;/)
-  assert.match(styles, /button:focus-visible\s*\{[\s\S]*?outline:\s*1px solid rgba\(/
+  assert.match(styles, /button:focus-visible\s*\{[\s\S]*?outline:\s*1px solid rgba\(/)
 
   // Keep a single base rule for each Downloads field, rather than competing old/new overrides.
   assert.equal([...styles.matchAll(/\.download-url-input\s*\{/g)].length, 1)
