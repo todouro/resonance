@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [main, 'feat/**', 'fix/**']
+    branches: [main, 'feat/**', 'fix/**', 'cleanup/**']
   pull_request:
   workflow_dispatch:
 jobs:
@@ -18,6 +18,8 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run build
+      - name: Verify the committed Cargo lockfile is present
+        run: test -f src-tauri/Cargo.lock
       - name: Rust unit tests (std-only download logic)
         run: |
           mkdir -p "$RUNNER_TEMP/rt"
@@ -59,4 +61,3 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/resonance.exe
           if-no-files-found: error
-

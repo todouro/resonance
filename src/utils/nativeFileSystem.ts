@@ -1,4 +1,5 @@
 import { readDir } from '@tauri-apps/plugin-fs'
+import { forEachWithConcurrency } from './concurrency.ts'
 import { toNativeAssetUrl } from './platform.ts'
 import { audioExtensions, coverExtensions, getExtension, readDuration } from './audioFiles.ts'
 import { colorFromString, normalizeName } from './covers.ts'
@@ -129,24 +130,6 @@ export async function nativeCoversFromPaths(coverPaths: string[]): Promise<{
   }
 
   return { lookup, paths, urls }
-}
-
-async function forEachWithConcurrency<T>(
-  items: T[],
-  concurrency: number,
-  task: (item: T, index: number) => Promise<void>,
-): Promise<void> {
-  let nextIndex = 0
-  const workerCount = Math.min(Math.max(1, concurrency), items.length)
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const index = nextIndex++
-        if (index >= items.length) return
-        await task(items[index], index)
-      }
-    }),
-  )
 }
 
 export async function nativeTracksFromPaths(
