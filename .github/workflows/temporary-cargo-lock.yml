@@ -1,0 +1,22 @@
+name: Temporary Cargo lock generation
+on:
+  push:
+    branches:
+      - tooling/generate-cargo-lock-temp
+permissions:
+  contents: read
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Generate lockfile
+        run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
+      - name: Upload lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: resonance-cargo-lock
+          path: src-tauri/Cargo.lock
+          if-no-files-found: error
