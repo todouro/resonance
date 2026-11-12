@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [main, 'feat/**', 'fix/**']
+    branches: [main, 'feat/**', 'fix/**', 'cleanup/**']
   pull_request:
   workflow_dispatch:
 jobs:
@@ -59,4 +59,3 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/resonance.exe
           if-no-files-found: error
-
