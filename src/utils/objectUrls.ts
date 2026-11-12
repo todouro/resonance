@@ -30,8 +30,27 @@ export function objectUrlForBlob(blob: Blob): string {
   return url
 }
 
+/** Releases one owner's reference to a URL and revokes it when no owners remain. */
+export function revokeOwnedObjectUrl(url: string): void {
+  const references = urlReferenceCounts.get(url)
+  if (references === undefined) return
+
+  if (references > 1) {
+    urlReferenceCounts.set(url, references - 1)
+    return
+  }
+
+  urlReferenceCounts.delete(url)
+  ownedUrls.delete(url)
+  for (const [key, cachedUrl] of cachedFileUrls) {
+    if (cachedUrl === url) cachedFileUrls.delete(key)
+  }
+  URL.revokeObjectURL(url)
+}
+
 export function revokeOwnedObjectUrls(): void {
   for (const url of ownedUrls) URL.revokeObjectURL(url)
   ownedUrls.clear()
   cachedFileUrls.clear()
+  urlReferenceCounts.clear()
 }
