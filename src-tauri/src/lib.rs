@@ -7,7 +7,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 use tauri_plugin_fs::FsExt;
@@ -29,7 +29,9 @@ static INSTALL_LOCK: Mutex<()> = Mutex::new(());
 const INSTALL_SCRIPT: &str = r#"$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
 $base='https://github.com/yt-dlp/yt-dlp/releases/latest/download/'
-$out=$env:RESONANCE_YTDLP_OUT; $tmp=$out+'.download'; $sumsFile=$out+'.sums'
+$out=$env:RESONANCE_YTDLP_OUT; $work=$env:RESONANCE_YTDLP_WORK_DIR
+New-Item -ItemType Directory -Force -Path $work | Out-Null
+$tmp=Join-Path $work 'yt-dlp.exe.download'; $sumsFile=Join-Path $work 'yt-dlp.exe.sums'
 try {
   Invoke-WebRequest -UseBasicParsing -Uri ($base+'yt-dlp.exe') -OutFile $tmp
   # GitHub serves the checksum list as application/octet-stream, which PowerShell returns as
@@ -51,7 +53,7 @@ const FFMPEG_INSTALL_SCRIPT: &str = r#"$ErrorActionPreference='Stop'; $ProgressP
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $base='https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/'
 $name='ffmpeg-master-latest-win64-gpl.zip'
-$dest=$env:RESONANCE_FFMPEG_DIR; $work=$dest+'.work'
+$dest=$env:RESONANCE_FFMPEG_DIR; $work=$env:RESONANCE_FFMPEG_WORK_DIR
 if (Test-Path -LiteralPath $work) { Remove-Item -Recurse -Force -LiteralPath $work }
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 try {
@@ -127,9 +129,30 @@ fn tools_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(tools)
 }
 
+fn lock_installation(
+    job: &Arc<runner::DownloadJob>,
+) -> Result<MutexGuard<'static, ()>, String> {
+    loop {
+        if job.is_cancelled() {
+            return Err("Download cancelled.".into());
+        }
+        match INSTALL_LOCK.try_lock() {
+            Ok(guard) => return Ok(guard),
+            Err(TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(50)),
+            Err(TryLockError::Poisoned(error)) => {
+                return Err(format!("The downloader installer is unavailable: {error}"));
+            }
+        }
+    }
+}
+
 /// Checks (at most weekly) for a newer yt-dlp. Only used for Resonance's private copy; a
-/// yt-dlp the user installed themselves is never modified. Best effort: failures are ignored.
-fn maybe_update_yt_dlp(executable: &Path, tools: &Path) {
+/// yt-dlp the user installed themselves is never modified. Update failures remain best effort.
+fn maybe_update_yt_dlp(
+    executable: &Path,
+    tools: &Path,
+    job: &Arc<runner::DownloadJob>,
+) -> Result<(), String> {
     let marker = tools.join(UPDATE_MARKER);
     let due = fs::metadata(&marker)
         .and_then(|meta| meta.modified())
@@ -138,16 +161,43 @@ fn maybe_update_yt_dlp(executable: &Path, tools: &Path) {
         .map(|age| age > UPDATE_CHECK_INTERVAL)
         .unwrap_or(true);
     if !due {
-        return;
+        return Ok(());
     }
+    if job.is_cancelled() {
+        return Err("Download cancelled.".into());
+    }
+
     // Write the marker first so being offline doesn't retry on every single download.
     let _ = fs::write(&marker, b"");
-    let _ = new_command(executable).arg("-U").output();
+    let result = runner::run_with_progress(
+        new_command(executable).arg("-U"),
+        Arc::new(|_| {}),
+        job,
+    )
+    .map_err(|error| format!("Could not check for a yt-dlp update: {error}"))?;
+    if result.cancelled || job.is_cancelled() {
+        let _ = fs::remove_file(&marker);
+        return Err("Download cancelled.".into());
+    }
+    Ok(())
 }
 
-fn yt_dlp_executable(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn yt_dlp_executable(
+    app: &tauri::AppHandle,
+    job: &Arc<runner::DownloadJob>,
+    temp_dir: &Path,
+) -> Result<PathBuf, String> {
+    if job.is_cancelled() {
+        return Err("Download cancelled.".into());
+    }
+
     // Prefer a normal installation if the user already has yt-dlp on PATH.
-    if new_command("yt-dlp").arg("--version").output().map(|o| o.status.success()).unwrap_or(false) {
+    if new_command("yt-dlp")
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+    {
         return Ok(PathBuf::from("yt-dlp"));
     }
 
@@ -155,28 +205,36 @@ fn yt_dlp_executable(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     // install it automatically on first use.
     let tools = tools_dir(app)?;
     let executable = tools.join("yt-dlp.exe");
+    let _guard = lock_installation(job)?;
+
+    if job.is_cancelled() {
+        return Err("Download cancelled.".into());
+    }
     if executable.is_file() {
-        if let Ok(_guard) = INSTALL_LOCK.lock() {
-            maybe_update_yt_dlp(&executable, &tools);
-        }
+        maybe_update_yt_dlp(&executable, &tools, job)?;
         return Ok(executable);
     }
 
-    let _guard = INSTALL_LOCK.lock().map_err(|_| "The downloader installer is unavailable.".to_string())?;
-    if executable.is_file() {
-        return Ok(executable); // another command finished the install while we waited
+    emit_progress(app, "preparing", "Setting up the downloader (one-time)…", None);
+    let result = runner::run_with_progress(
+        new_command("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", INSTALL_SCRIPT])
+            .env("RESONANCE_YTDLP_OUT", &executable)
+            .env("RESONANCE_YTDLP_WORK_DIR", temp_dir.join("yt-dlp-install")),
+        Arc::new(|_| {}),
+        job,
+    )
+    .map_err(|error| format!("Resonance could not download yt-dlp automatically: {error}. Check your internet connection and try again."))?;
+
+    if result.cancelled || job.is_cancelled() {
+        let _ = fs::remove_file(&executable);
+        return Err("Download cancelled.".into());
     }
 
-    emit_progress(app, "preparing", "Setting up the downloader (one-time)…", None);
-    let result = new_command("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", INSTALL_SCRIPT])
-        .env("RESONANCE_YTDLP_OUT", &executable)
-        .output()
-        .map_err(|error| format!("Resonance could not download yt-dlp automatically: {error}. Check your internet connection and try again."))?;
-
-    if !result.status.success() || !executable.is_file() {
+    if !result.success || !executable.is_file() {
         let _ = fs::remove_file(&executable);
-        let detail = installer_error(&result.stderr, "The download did not complete.");
+        let stderr = result.stderr.join("\n");
+        let detail = installer_error(stderr.as_bytes(), "The download did not complete.");
         return Err(format!("Resonance could not install yt-dlp automatically: {detail} Check your internet connection and try again."));
     }
 
@@ -186,7 +244,14 @@ fn yt_dlp_executable(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 /// Returns the folder to pass to `--ffmpeg-location`, or None when ffmpeg is already on PATH.
 /// Installs a verified private copy the first time a format conversion is requested.
-fn ffmpeg_location(app: &tauri::AppHandle) -> Result<Option<PathBuf>, String> {
+fn ffmpeg_location(
+    app: &tauri::AppHandle,
+    job: &Arc<runner::DownloadJob>,
+    temp_dir: &Path,
+) -> Result<Option<PathBuf>, String> {
+    if job.is_cancelled() {
+        return Err("Download cancelled.".into());
+    }
     if command_works("ffmpeg") && command_works("ffprobe") {
         return Ok(None);
     }
@@ -197,7 +262,10 @@ fn ffmpeg_location(app: &tauri::AppHandle) -> Result<Option<PathBuf>, String> {
         return Ok(Some(dir));
     }
 
-    let _guard = INSTALL_LOCK.lock().map_err(|_| "The ffmpeg installer is unavailable.".to_string())?;
+    let _guard = lock_installation(job)?;
+    if job.is_cancelled() {
+        return Err("Download cancelled.".into());
+    }
     if ready(&dir) {
         return Ok(Some(dir));
     }
@@ -208,32 +276,60 @@ fn ffmpeg_location(app: &tauri::AppHandle) -> Result<Option<PathBuf>, String> {
         "Setting up audio conversion (one-time download, about 200 MB)…",
         None,
     );
-    let result = new_command("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", FFMPEG_INSTALL_SCRIPT])
-        .env("RESONANCE_FFMPEG_DIR", &dir)
-        .output()
-        .map_err(|error| format!("Resonance could not download ffmpeg automatically: {error}."))?;
+    let result = runner::run_with_progress(
+        new_command("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", FFMPEG_INSTALL_SCRIPT])
+            .env("RESONANCE_FFMPEG_DIR", &dir)
+            .env("RESONANCE_FFMPEG_WORK_DIR", temp_dir.join("ffmpeg-install")),
+        Arc::new(|_| {}),
+        job,
+    )
+    .map_err(|error| format!("Resonance could not download ffmpeg automatically: {error}"))?;
 
-    if !result.status.success() || !ready(&dir) {
+    let work_dir = temp_dir.join("ffmpeg-install");
+    if result.cancelled || job.is_cancelled() {
+        let _ = fs::remove_dir_all(&work_dir);
         let _ = fs::remove_dir_all(&dir);
-        let detail = installer_error(&result.stderr, "The download did not complete.");
+        return Err("Download cancelled.".into());
+    }
+    if !result.success || !ready(&dir) {
+        let _ = fs::remove_dir_all(&work_dir);
+        let _ = fs::remove_dir_all(&dir);
+        let stderr = result.stderr.join("\n");
+        let detail = installer_error(stderr.as_bytes(), "The download did not complete.");
         return Err(format!(
             "Resonance could not set up audio conversion: {detail} Check your connection, or choose \"Best available audio\", which needs no conversion."
         ));
     }
+    let _ = fs::remove_dir_all(&work_dir);
     Ok(Some(dir))
 }
 
-fn run_download(app: tauri::AppHandle, url: String, output_path: PathBuf, format: String) -> Result<String, String> {
+fn run_download(
+    app: tauri::AppHandle,
+    url: String,
+    output_path: PathBuf,
+    format: String,
+    job: Arc<runner::DownloadJob>,
+) -> Result<String, String> {
+    if job.is_cancelled() {
+        return Err("Download cancelled.".into());
+    }
     emit_progress(&app, "preparing", "Preparing…", None);
-    let executable = yt_dlp_executable(&app)?;
-    let ffmpeg = if format == "best" { None } else { ffmpeg_location(&app)? };
 
-    // Partial files go to a private temp folder, never into the user's Music folder, so a
-    // cancelled or failed download leaves nothing behind there.
-    let temp_dir = tools_dir(&app)?.join("tmp");
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).map_err(|error| format!("Could not prepare a temporary folder: {error}"))?;
+    // Each job owns a distinct temporary directory. Drop cleans it on every exit path.
+    let tools = tools_dir(&app)?;
+    let temp_dir = runner::TemporaryDirectory::create(&tools.join("tmp"), job.id())?;
+    let executable = yt_dlp_executable(&app, &job, temp_dir.path())?;
+    let ffmpeg = if format == "best" {
+        None
+    } else {
+        ffmpeg_location(&app, &job, temp_dir.path())?
+    };
+
+    if job.is_cancelled() {
+        return Err("Download cancelled.".into());
+    }
 
     let mut command = new_command(executable);
     command
@@ -252,7 +348,7 @@ fn run_download(app: tauri::AppHandle, url: String, output_path: PathBuf, format
         .arg("-P")
         .arg(&output_path)
         .arg("-P")
-        .arg(format!("temp:{}", temp_dir.display()))
+        .arg(format!("temp:{}", temp_dir.path().display()))
         .arg("-o")
         .arg("%(title)s.%(ext)s")
         .arg("-f")
@@ -271,18 +367,16 @@ fn run_download(app: tauri::AppHandle, url: String, output_path: PathBuf, format
         }
     }
 
-    // `--` guarantees the URL can never be parsed as an option.
+    // A leading option separator prevents the URL from being parsed as an option.
     command.arg("--").arg(&url);
 
     let handle = app.clone();
     let on_progress: runner::ProgressCallback =
         Arc::new(move |progress| emit_progress(&handle, "downloading", "", Some(&progress)));
-    let output = runner::run_with_progress(command, on_progress)
-        .map_err(|error| format!("Could not start yt-dlp: {error}"));
-    let _ = fs::remove_dir_all(&temp_dir);
-    let output = output?;
+    let output = runner::run_with_progress(command, on_progress, &job)
+        .map_err(|error| format!("Could not start yt-dlp: {error}"))?;
 
-    if output.cancelled {
+    if output.cancelled || job.is_cancelled() {
         return Err("Download cancelled.".into());
     }
     if !output.success {
@@ -336,9 +430,15 @@ async fn download_audio(
         return Err("That audio format is not supported.".into());
     }
 
-    tauri::async_runtime::spawn_blocking(move || run_download(app, url, output_path, format))
-        .await
-        .map_err(|error| format!("The download task stopped unexpectedly: {error}"))?
+    let active = runner::begin_active_download()?;
+    let job = active.job();
+    tauri::async_runtime::spawn_blocking(move || {
+        // Keep the backend lock until the blocking worker has fully returned.
+        let _active = active;
+        run_download(app, url, output_path, format, job)
+    })
+    .await
+    .map_err(|error| format!("The download task stopped unexpectedly: {error}"))?
 }
 
 /// Stops the download that is currently running (including ffmpeg and other child processes).
@@ -350,7 +450,10 @@ async fn cancel_download() -> bool {
 }
 
 fn run_inspect(app: tauri::AppHandle, url: String) -> Result<String, String> {
-    let executable = yt_dlp_executable(&app)?;
+    let job = Arc::new(runner::DownloadJob::new());
+    let tools = tools_dir(&app)?;
+    let temp_dir = runner::TemporaryDirectory::create(&tools.join("tmp"), job.id())?;
+    let executable = yt_dlp_executable(&app, &job, temp_dir.path())?;
     let result = new_command(executable)
         .arg("--dump-single-json")
         .arg("--no-warnings")
