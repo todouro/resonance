@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { PlaybackQueue } from '../src/utils/queue.ts'
 import { trackIdForFile } from '../src/utils/trackIdentity.ts'
-import { objectUrlForFile, revokeOwnedObjectUrls } from '../src/utils/objectUrls.ts'
+import { objectUrlForFile, revokeOwnedObjectUrl, revokeOwnedObjectUrls } from '../src/utils/objectUrls.ts'
+import { forEachWithConcurrency } from '../src/utils/concurrency.ts'
 import { readID3Metadata, detectSongAndArtist, autoDetectTrackMetadata } from '../src/utils/metadata.ts'
 import { uniqueTracks, tracksFromFiles } from '../src/utils/library.ts'
 import { syncTracksWithCovers } from '../src/utils/covers.ts'
@@ -92,6 +93,101 @@ test('existing files are rejected before metadata or duration extraction', async
   const file = new File(['fake'], 'song.mp3', { type: 'audio/mpeg', lastModified: 14 })
   const tracks = await tracksFromFiles([file], new Map(), new Set([trackIdForFile(file)]))
   assert.deepEqual(tracks, [])
+})
+
+
+test('browser imports process no more than four audio metadata reads at once', async () => {
+  const originalAudio = globalThis.Audio
+  let active = 0
+  let maximum = 0
+  class MockAudio {
+    preload = ''
+    duration = 123
+    onloadedmetadata = null
+    onerror = null
+    set src(_value) {
+      active += 1
+      maximum = Math.max(maximum, active)
+      setTimeout(() => {
+        active -= 1
+        this.onloadedmetadata?.()
+      }, 8)
+    }
+    removeAttribute() {}
+    load() {}
+  }
+  globalThis.Audio = MockAudio
+  try {
+    const files = Array.from({ length: 12 }, (_, index) => new File(
+      ['plain audio bytes'],
+      \`Artist - Browser import \${index}.mp3\`,
+      { type: 'audio/mpeg', lastModified: 20261112 + index },
+    ))
+    const tracks = await tracksFromFiles(files, new Map())
+    assert.equal(tracks.length, 12)
+    assert.ok(maximum > 1)
+    assert.ok(maximum <= 4)
+  } finally {
+    globalThis.Audio = originalAudio
+    revokeOwnedObjectUrls()
+  }
+})
+
+test('the shared concurrency limiter never exceeds its worker limit', async () => {
+  let active = 0
+  let maximum = 0
+  const visited = []
+  await forEachWithConcurrency(Array.from({ length: 12 }, (_, index) => index), 4, async (item) => {
+    active += 1
+    maximum = Math.max(maximum, active)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    visited.push(item)
+    active -= 1
+  })
+  assert.ok(maximum > 1)
+  assert.ok(maximum <= 4)
+  assert.deepEqual(visited.sort((a, b) => a - b), Array.from({ length: 12 }, (_, index) => index))
+})
+
+test('failed browser imports revoke all object URLs created for the discarded batch', async () => {
+  const file = new File(['not an ID3 tag'], 'failed-import-regression.mp3', {
+    type: 'audio/mpeg',
+    lastModified: 20261112,
+  })
+  const created = []
+  const revoked = []
+  const originalCreate = URL.createObjectURL
+  const originalRevoke = URL.revokeObjectURL
+  URL.createObjectURL = (blob) => {
+    const url = originalCreate.call(URL, blob)
+    created.push(url)
+    return url
+  }
+  URL.revokeObjectURL = (url) => {
+    revoked.push(url)
+    return originalRevoke.call(URL, url)
+  }
+  try {
+    await assert.rejects(tracksFromFiles([file], new Map()))
+    assert.equal(created.length, 1)
+    assert.deepEqual(revoked, created)
+  } finally {
+    URL.createObjectURL = originalCreate
+    URL.revokeObjectURL = originalRevoke
+    revokeOwnedObjectUrls()
+  }
+})
+
+test('releasing one shared file URL does not revoke it while another import owns it', () => {
+  const file = new File(['content'], 'single-release.mp3', { type: 'audio/mpeg', lastModified: 20261112 })
+  const first = objectUrlForFile(file)
+  const second = objectUrlForFile(new File(['content'], 'single-release.mp3', { type: 'audio/mpeg', lastModified: 20261112 }))
+  assert.equal(second, first)
+  revokeOwnedObjectUrl(first)
+  revokeOwnedObjectUrl(second)
+  const replacement = objectUrlForFile(file)
+  assert.notEqual(replacement, first)
+  revokeOwnedObjectUrls()
 })
 
 test('shuffle does not repeat until available tracks have played', () => {
