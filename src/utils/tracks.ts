@@ -127,7 +127,7 @@ export async function tracksFromFiles(
     // Successful siblings are also discarded when the batch rejects, so release their URLs.
     for (const track of tracks) {
       if (!track) continue
-      revokeOwnedObjectUrl(track.audioUrl)
+      if (track.audioUrl) revokeOwnedObjectUrl(track.audioUrl)
       if (track.coverSource === 'embedded' && track.coverUrl) {
         revokeOwnedObjectUrl(track.coverUrl)
       }
