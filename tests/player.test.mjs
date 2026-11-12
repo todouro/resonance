@@ -120,7 +120,7 @@ test('browser imports process no more than four audio metadata reads at once', a
   try {
     const files = Array.from({ length: 12 }, (_, index) => new File(
       ['plain audio bytes'],
-      \`Artist - Browser import \${index}.mp3\`,
+      'Artist - Browser import ' + index + '.mp3',
       { type: 'audio/mpeg', lastModified: 20261112 + index },
     ))
     const tracks = await tracksFromFiles(files, new Map())
