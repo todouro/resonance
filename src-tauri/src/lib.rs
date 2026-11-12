@@ -169,11 +169,9 @@ fn maybe_update_yt_dlp(
 
     // Write the marker first so being offline doesn't retry on every single download.
     let _ = fs::write(&marker, b"");
-    let result = runner::run_with_progress(
-        new_command(executable).arg("-U"),
-        Arc::new(|_| {}),
-        job,
-    )
+    let mut command = new_command(executable);
+    command.arg("-U");
+    let result = runner::run_with_progress(command, Arc::new(|_| {}), job)
     .map_err(|error| format!("Could not check for a yt-dlp update: {error}"))?;
     if result.cancelled || job.is_cancelled() {
         let _ = fs::remove_file(&marker);
@@ -216,14 +214,12 @@ fn yt_dlp_executable(
     }
 
     emit_progress(app, "preparing", "Setting up the downloader (one-time)…", None);
-    let result = runner::run_with_progress(
-        new_command("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", INSTALL_SCRIPT])
-            .env("RESONANCE_YTDLP_OUT", &executable)
-            .env("RESONANCE_YTDLP_WORK_DIR", temp_dir.join("yt-dlp-install")),
-        Arc::new(|_| {}),
-        job,
-    )
+    let mut command = new_command("powershell.exe");
+    command
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", INSTALL_SCRIPT])
+        .env("RESONANCE_YTDLP_OUT", &executable)
+        .env("RESONANCE_YTDLP_WORK_DIR", temp_dir.join("yt-dlp-install"));
+    let result = runner::run_with_progress(command, Arc::new(|_| {}), job)
     .map_err(|error| format!("Resonance could not download yt-dlp automatically: {error}. Check your internet connection and try again."))?;
 
     if result.cancelled || job.is_cancelled() {
@@ -276,14 +272,12 @@ fn ffmpeg_location(
         "Setting up audio conversion (one-time download, about 200 MB)…",
         None,
     );
-    let result = runner::run_with_progress(
-        new_command("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", FFMPEG_INSTALL_SCRIPT])
-            .env("RESONANCE_FFMPEG_DIR", &dir)
-            .env("RESONANCE_FFMPEG_WORK_DIR", temp_dir.join("ffmpeg-install")),
-        Arc::new(|_| {}),
-        job,
-    )
+    let mut command = new_command("powershell.exe");
+    command
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", FFMPEG_INSTALL_SCRIPT])
+        .env("RESONANCE_FFMPEG_DIR", &dir)
+        .env("RESONANCE_FFMPEG_WORK_DIR", temp_dir.join("ffmpeg-install"));
+    let result = runner::run_with_progress(command, Arc::new(|_| {}), job)
     .map_err(|error| format!("Resonance could not download ffmpeg automatically: {error}"))?;
 
     let work_dir = temp_dir.join("ffmpeg-install");
