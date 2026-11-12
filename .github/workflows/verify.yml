@@ -18,6 +18,8 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run build
+      - name: Verify the committed Cargo lockfile is present
+        run: test -f src-tauri/Cargo.lock
       - name: Rust unit tests (std-only download logic)
         run: |
           mkdir -p "$RUNNER_TEMP/rt"
